@@ -328,9 +328,10 @@ class VertexAIManager:
         try:
             # Use RAG location if set, otherwise use GCP_LOCATION
             location = self.env_vars.get("RAG_GCP_LOCATION") or self.location
+            staging_bucket = self.env_vars.get("GCP_STAGING_BUCKET")
 
             vertexai.init(
-                project=self.project_id, location=location, credentials=self.credentials
+                project=self.project_id, location=location, credentials=self.credentials, staging_bucket=staging_bucket
             )
             typer.secho("  ✓ Vertex AI initialized successfully", fg=typer.colors.GREEN)
             typer.secho(f"    Project: {self.project_id}", fg=typer.colors.GREEN)
