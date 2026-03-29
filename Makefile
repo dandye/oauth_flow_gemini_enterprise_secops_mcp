@@ -109,11 +109,10 @@ help: ## Show this help message
 	@echo "  • Use \033[33mENV_FILE=path\033[0m to specify different environment file"
 	@echo "  • Use \033[33mV=1\033[0m for verbose output (shows all commands and detailed script output)"
 	@echo "  • Use \033[33mFORCE=1\033[0m with delete/register commands to skip confirmations"
-	@echo "  • See docs/DEPLOYMENT_WORKFLOW.md for detailed instructions"
 	@echo ""
 
 install: ## Install Python dependencies
-	$(PYTHON) -m pip install -r requirements.txt
+	$(PYTHON) -m pip install -r requirements.in
 
 setup: ## Set up environment and install dependencies
 	$(Q)if [ ! -f "$(ENV_FILE)" ]; then \
@@ -393,18 +392,20 @@ format: ## Format code (if available)
 	fi
 
 # Evaluation targets
+EVAL_DIR := secops_agent/tests/eval/evalsets
+
 eval: ## Run all agent evaluations
 	$(Q)echo "Running all evalsets..."
-	$(Q)$(PYTHON) -m google.adk.cli eval $(AGENT_MODULE) evalsets/
+	$(Q)$(PYTHON) -m google.adk.cli eval $(AGENT_MODULE) $(EVAL_DIR)/
 
 eval-basic: ## Run basic operations evalset
-	$(Q)$(PYTHON) -m google.adk.cli eval $(AGENT_MODULE) evalsets/soc_basic.evalset.json
+	$(Q)$(PYTHON) -m google.adk.cli eval $(AGENT_MODULE) $(EVAL_DIR)/soc_basic.evalset.json
 
 eval-cti: ## Run CTI research evalset
-	$(Q)$(PYTHON) -m google.adk.cli eval $(AGENT_MODULE) evalsets/cti_research.evalset.json
+	$(Q)$(PYTHON) -m google.adk.cli eval $(AGENT_MODULE) $(EVAL_DIR)/cti_research.evalset.json
 
 eval-tier1: ## Run Tier 1 triage evalset
-	$(Q)$(PYTHON) -m google.adk.cli eval $(AGENT_MODULE) evalsets/tier1_triage.evalset.json
+	$(Q)$(PYTHON) -m google.adk.cli eval $(AGENT_MODULE) $(EVAL_DIR)/tier1_triage.evalset.json
 
 eval-multi: ## Run multi-specialist evalset
-	$(Q)$(PYTHON) -m google.adk.cli eval $(AGENT_MODULE) evalsets/multi_specialist.evalset.json
+	$(Q)$(PYTHON) -m google.adk.cli eval $(AGENT_MODULE) $(EVAL_DIR)/multi_specialist.evalset.json
