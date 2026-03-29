@@ -12,6 +12,25 @@ This guide outlines the bare minimum steps to successfully deploy and register a
 6. **Create Gemini Enterprise App**: Initialize the application container within Gemini Enterprise.
 7. **Register Agent with Enterprise**: Finalize the process by associating your Reasoning Engine to your Gemini Enterprise App.
 
+### Deployment Flowchart
+
+```mermaid
+graph TD
+    Start((Start)) --> Env[0. Validate .env<br/>'make env-validate']
+    Env --> IAM[Setup IAM<br/>'make iam-setup']
+    IAM --> Deploy[1. Deploy Agent Engine<br/>'make agent-engine-deploy']
+    Deploy --> Save[2. Save Engine ID to .env]
+    Save --> Console{3. Create OAuth Client ID<br/>in GCP Web Console}
+    Console --> Setup[4. Link Client ID Locally<br/>'make oauth-setup']
+    Setup --> Auth[5. Register Auth in Cloud<br/>'make oauth-create-auth']
+    Auth --> App[6. Create AgentSpace App<br/>'make agentspace-create-app']
+    App --> Reg[7. Register Agent to App<br/>'make agentspace-register']
+    Reg --> Success((Success!))
+
+    style Console fill:#f9f,stroke:#333,stroke-width:2px
+    style Success fill:#dfd,stroke:#333,stroke-width:2px
+```
+
 ---
 
 ## 0. Prerequisite: Environment Validation
