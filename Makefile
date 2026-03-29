@@ -14,6 +14,7 @@
 	vertex-ai-verify vertex-ai-enable-apis vertex-ai-quota \
 	oauth-setup oauth-create-auth oauth-verify oauth-delete \
 	secret-upload secret-upload-force secret-verify \
+	iam-setup iam-verify iam-list-roles env-validate \
 	redeploy-all oauth-workflow full-deploy-with-oauth status cleanup check-env lint format \
 	eval eval-basic eval-cti eval-tier1 eval-multi
 
@@ -51,9 +52,11 @@ MANAGE_AGENT_ENGINE := installation_scripts/manage_agent_engine.py
 MANAGE_OAUTH := installation_scripts/manage_oauth.py
 MANAGE_GCS := installation_scripts/manage_gcs.py
 MANAGE_VERTEX_AI := installation_scripts/manage_vertex_ai.py
+MANAGE_IAM := installation_scripts/manage_iam.py
+MANAGE_ENV := installation_scripts/env_validation.py
 
 # Validation targets
-.PHONY: check-prereqs check-deploy check-integration
+.PHONY: check-prereqs check-deploy check-integration env-validate
 
 check-prereqs: ## Validate Stage 1 prerequisites
 	$(Q)if [ -z "$(GCP_PROJECT_ID)" ]; then echo "ERROR: GCP_PROJECT_ID not set in $(ENV_FILE)"; exit 1; fi
@@ -93,8 +96,11 @@ help: ## Show this help message
 	@echo "\033[1;32mSecret Manager\033[0m"
 	@grep -h -E '^secret-[^:]*:.*?## .*$$' Makefile | sed 's/:.*##/##/' | awk 'BEGIN {FS = "##"} {printf "  \033[36m%-24s\033[0m %s\n", $$1, $$2}'
 	@echo ""
+	@echo "\033[1;35mIAM Management\033[0m"
+	@grep -h -E '^iam-[^:]*:.*?## .*$$' Makefile | sed 's/:.*##/##/' | awk 'BEGIN {FS = "##"} {printf "  \033[36m%-24s\033[0m %s\n", $$1, $$2}'
+	@echo ""
 	@echo "\033[1;36mWorkflows & Utilities\033[0m"
-	@grep -h -E '^(status|cleanup|.*-redeploy|redeploy-all|full-deploy-with-oauth):.*?## .*$$' Makefile | sed 's/:.*##/##/' | awk 'BEGIN {FS = "##"} {printf "  \033[36m%-24s\033[0m %s\n", $$1, $$2}'
+	@grep -h -E '^(status|cleanup|.*-redeploy|redeploy-all|full-deploy-with-oauth|env-validate):.*?## .*$$' Makefile | sed 's/:.*##/##/' | awk 'BEGIN {FS = "##"} {printf "  \033[36m%-24s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "\033[1;37mUsage Examples:\033[0m"
 	@echo "  \033[33mmake setup\033[0m                              - Initialize project and install dependencies"
@@ -292,6 +298,24 @@ secret-upload-force: ## Upload Chronicle service account to Secret Manager (skip
 
 secret-verify: ## Verify Secret Manager access to Chronicle service account (use CREDS=/path/to/sa.json)
 	$(PYTHON) $(MANAGE_SECRET) verify --env-file $(ENV_FILE) $(if $(CREDS),--credentials $(CREDS))
+
+# IAM Management targets
+iam-setup: ## Setup required IAM permissions for AgentSpace service accounts
+	$(PYTHON) $(MANAGE_IAM) setup --env-file $(ENV_FILE) $(VERBOSE)
+
+iam-verify: ## Verify AgentSpace IAM permissions
+	$(PYTHON) $(MANAGE_IAM) verify --env-file $(ENV_FILE)
+
+iam-list-roles: ## List IAM roles for a specific service (use SERVICE=aiplatform-re or discoveryengine)
+	@if [ -z "$(SERVICE)" ]; then \
+		echo "Error: SERVICE is required. Usage: make iam-list-roles SERVICE=aiplatform-re"; \
+		exit 1; \
+	fi
+	$(PYTHON) $(MANAGE_IAM) list-roles $(SERVICE) --env-file $(ENV_FILE)
+
+# Environment validation
+env-validate: ## Validate environment variables in .env file
+	$(PYTHON) $(MANAGE_ENV) --env-file $(ENV_FILE)
 
 # Agent Engine management targets
 agent-engine-list: ## List all Agent Engine instances (use V=1 for detailed output)
