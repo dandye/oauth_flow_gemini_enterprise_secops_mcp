@@ -10,7 +10,7 @@
 	agentspace-register agentspace-update agentspace-verify agentspace-delete \
 	agentspace-url agentspace-test agentspace-datastore agentspace-link-agent agentspace-unlink-agent \
 	agentspace-update-agent agentspace-list-agents agentspace-list-apps agentspace-create-app agentspace-redeploy \
-	gcs-upload gcs-list gcs-delete gcs-validate gcs-uri gcs-bucket-create gcs-bucket-info \
+	gcs-bucket-create \
 	vertex-ai-verify vertex-ai-enable-apis vertex-ai-quota \
 	oauth-setup oauth-create-auth oauth-verify oauth-delete \
 	secret-upload secret-upload-force secret-verify \
@@ -235,62 +235,6 @@ agentspace-create-app: ## Create a new AgentSpace app (use: APP_NAME="My App" TY
 		--env-file $(ENV_FILE)
 
 # GCS Management targets
-gcs-upload: ## Upload local files to GCS (use: FILES="file1 file2" BUCKET=bucket-name RECURSIVE=1)
-	@if [ -z "$(FILES)" ]; then \
-		echo "Error: FILES is required. Usage: make gcs-upload FILES='file1 file2' BUCKET=bucket-name"; \
-		exit 1; \
-	fi
-	@$(PYTHON) $(MANAGE_GCS) upload $(FILES) \
-		$(if $(BUCKET),--bucket $(BUCKET)) \
-		$(if $(PATH),--path $(PATH)) \
-		$(if $(filter 1,$(RECURSIVE)),--recursive) \
-		$(if $(filter 1,$(PRESERVE_STRUCTURE)),--preserve-structure) \
-		$(if $(filter 1,$(OVERWRITE)),--overwrite) \
-		--env-file $(ENV_FILE)
-
-gcs-list: ## List GCS buckets or files (use: BUCKET=bucket-name PREFIX=path/)
-	@$(PYTHON) $(MANAGE_GCS) list \
-		$(if $(BUCKET),--bucket $(BUCKET)) \
-		$(if $(PREFIX),--prefix $(PREFIX)) \
-		$(VERBOSE) \
-		--env-file $(ENV_FILE)
-
-gcs-delete: ## Delete files from GCS (use: URI=gs://bucket/file OR BUCKET=bucket PREFIX=path/)
-	@if [ -n "$(URI)" ]; then \
-		$(PYTHON) $(MANAGE_GCS) delete $(URI) \
-			$(if $(filter 1,$(FORCE)),--force) \
-			$(if $(filter 1,$(DRY_RUN)),--dry-run) \
-			--env-file $(ENV_FILE); \
-	elif [ -n "$(BUCKET)" ] && [ -n "$(PREFIX)" ]; then \
-		$(PYTHON) $(MANAGE_GCS) delete \
-			--bucket $(BUCKET) \
-			--prefix $(PREFIX) \
-			$(if $(filter 1,$(FORCE)),--force) \
-			$(if $(filter 1,$(DRY_RUN)),--dry-run) \
-			--env-file $(ENV_FILE); \
-	else \
-		echo "Error: Provide either URI=gs://... or both BUCKET=... and PREFIX=..."; \
-		exit 1; \
-	fi
-
-gcs-validate: ## Validate files for RAG import (use: FILES="file1 file2")
-	@if [ -z "$(FILES)" ]; then \
-		echo "Error: FILES is required. Usage: make gcs-validate FILES='file1 file2'"; \
-		exit 1; \
-	fi
-	@$(PYTHON) $(MANAGE_GCS) validate $(FILES) --env-file $(ENV_FILE)
-
-gcs-uri: ## Generate GCS URIs for files (use: BUCKET=bucket-name PREFIX=path/ OUTPUT=uris.txt)
-	@if [ -z "$(BUCKET)" ]; then \
-		echo "Error: BUCKET is required. Usage: make gcs-uri BUCKET=bucket-name"; \
-		exit 1; \
-	fi
-	@$(PYTHON) $(MANAGE_GCS) uri \
-		--bucket $(BUCKET) \
-		$(if $(PREFIX),--prefix $(PREFIX)) \
-		$(if $(OUTPUT),--output $(OUTPUT)) \
-		--env-file $(ENV_FILE)
-
 gcs-bucket-create: ## Create a new GCS bucket (use: BUCKET=bucket-name LOCATION=us-central1)
 	@if [ -z "$(BUCKET)" ]; then \
 		echo "Error: BUCKET is required. Usage: make gcs-bucket-create BUCKET=bucket-name"; \
@@ -300,13 +244,6 @@ gcs-bucket-create: ## Create a new GCS bucket (use: BUCKET=bucket-name LOCATION=
 		$(if $(LOCATION),--location $(LOCATION)) \
 		$(if $(STORAGE_CLASS),--storage-class $(STORAGE_CLASS)) \
 		--env-file $(ENV_FILE)
-
-gcs-bucket-info: ## Get information about a GCS bucket (use: BUCKET=bucket-name)
-	@if [ -z "$(BUCKET)" ]; then \
-		echo "Error: BUCKET is required. Usage: make gcs-bucket-info BUCKET=bucket-name"; \
-		exit 1; \
-	fi
-	@$(PYTHON) $(MANAGE_GCS) bucket-info $(BUCKET) --env-file $(ENV_FILE)
 
 # Vertex AI setup and verification targets
 vertex-ai-verify: ## Verify complete Vertex AI setup (APIs, auth, permissions)
