@@ -14,7 +14,18 @@ from dotenv import load_dotenv
 import logging
 import sys
 
+# Configure logging for Reasoning Engine environment
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    stream=sys.stdout
+)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+logger.info("Agent module loaded, logger initialized.")
+
 def get_secops_headers(context) -> dict[str, str]:
+    logger.info("get_secops_headers called")
     # Read from environment AT RUNTIME
     chronicle_project_id = os.environ.get("CHRONICLE_PROJECT_ID")
     customer_id = os.environ.get("CHRONICLE_CUSTOMER_ID")
@@ -31,8 +42,9 @@ def get_secops_headers(context) -> dict[str, str]:
         headers["x-goog-user-project"] = chronicle_project_id
     else:
         # Critical for tool execution, though list_tools might still work
-        logging.critical("CHRONICLE_PROJECT_ID is missing from environment! OneMCP tool calls *will* fail without a routing context.")
+        logger.critical("CHRONICLE_PROJECT_ID is missing from environment! OneMCP tool calls *will* fail without a routing context.")
 
+    logger.info(f"Generated headers: {list(headers.keys())}")
     return headers
 
 def create_mcp_toolset(region, auth_scheme=None, auth_credential=None) -> McpToolset:
@@ -50,6 +62,7 @@ def create_mcp_toolset(region, auth_scheme=None, auth_credential=None) -> McpToo
     )
 
 def create_agent():
+    logger.info("create_agent() entry")
     load_dotenv()
     
     project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
@@ -99,9 +112,11 @@ def create_agent():
         ),
     )
 
+    logger.info("Defining MCP connection params and toolset...")
     secops_toolset = create_mcp_toolset(region, auth_scheme, auth_credential)
+    logger.info("MCP toolset defined.")
 
-    return Agent(
+    agent_obj = Agent(
         name="secops_agent",
         model=Gemini(
             model="gemini-3.1-flash-lite-preview",
@@ -120,3 +135,5 @@ When calling tools, ensure you use these identifiers if the tool requires them.
 """,
         tools=[secops_toolset],
     )
+    logger.info("Agent object created.")
+    return agent_obj
