@@ -166,9 +166,14 @@ def deploy(
         if run_test:
             typer.echo("\nRunning smoke test...")
             try:
-                import pdb; pdb.set_trace()
-                response = remote_app.query(input="Hello")
-                typer.echo(f"Test response: {response}")
+                client = vertexai.Client()
+                engine = client.agent_engines.get(name=remote_app.resource_name)
+                
+                typer.echo("Response: ", nl=False)
+                for chunk in engine.stream_query(message="Hello", user_id="smoke_test_user"):
+                    typer.echo(chunk, nl=False)
+                typer.echo()
+                typer.secho("\nSmoke test successful!", fg=typer.colors.GREEN, bold=True)
             except Exception as test_err:
                 typer.secho(f"Warning: Smoke test failed: {test_err}", fg=typer.colors.YELLOW)
 
