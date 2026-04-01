@@ -77,17 +77,17 @@ def get_env_vars():
 def get_requirements():
     """Return the list of requirements for the Reasoning Engine."""
     return [
-        "google-adk~=1.27.4",
-        "google-cloud-aiplatform[agent-engines,evaluation]~=1.143.0",
+        "google-adk~=1.28.0",
+        "google-cloud-aiplatform[agent-engines,evaluation]~=1.144.0",
         "pydantic",
         "python-dotenv",
         "opentelemetry-sdk",
         "opentelemetry-instrumentation-google-genai",
         "opentelemetry-exporter-gcp-logging",
         "mcp>=1.0.0",
-        "gcsfs>=2024.11.0",
-        "google-cloud-logging>=3.12.0",
-        "protobuf>=6.31.1",
+        "gcsfs>=2026.3.0",
+        "google-cloud-logging>=3.15.0",
+        "protobuf>=3.20.2,<7.0.0",
         "google-genai",
     ]
 
@@ -166,6 +166,7 @@ def deploy(
         if run_test:
             typer.echo("\nRunning smoke test...")
             try:
+                import pdb; pdb.set_trace()
                 response = remote_app.query(input="Hello")
                 typer.echo(f"Test response: {response}")
             except Exception as test_err:
@@ -396,9 +397,13 @@ def test(
     
     typer.echo(f"Testing engine: {resource_name}")
     try:
-        engine = ReasoningEngine(resource_name)
-        response = engine.query(input=input)
-        typer.echo(f"\nResponse: {response}")
+        client = vertexai.Client()
+        engine = client.agent_engines.get(name=resource_name)
+        
+        typer.echo("Response: ", nl=False)
+        for chunk in engine.stream_query(message=input, user_id="smoke_test_user"):
+            typer.echo(chunk, nl=False)
+        typer.echo()
         typer.secho("\nTest successful!", fg=typer.colors.GREEN, bold=True)
     except Exception as e:
         typer.secho(f"\nTest failed: {e}", fg=typer.colors.RED)
