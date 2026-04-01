@@ -7,6 +7,8 @@ from google.adk.tools.mcp_tool import McpToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
 from google.genai import types
 
+from fastapi.openapi.models import OAuth2, OAuthFlows, OAuthFlowAuthorizationCode
+
 from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumentor
 from dotenv import load_dotenv
 import logging
@@ -31,16 +33,9 @@ def get_secops_headers(context) -> dict[str, str]:
         # Critical for tool execution, though list_tools might still work
         logging.critical("CHRONICLE_PROJECT_ID is missing from environment! OneMCP tool calls *will* fail without a routing context.")
 
-    if context and context.state and gemini_auth_id:
-        user_token = context.state.get(gemini_auth_id)
-        if user_token:
-            headers["Authorization"] = f"Bearer {user_token}"
-            # Log first few chars for debugging without leaking full sensitive token in recap
-            logging.info(f"DEBUG: Tool Call Auth Header present (starts with: {user_token[:10]}...)")
-            
     return headers
 
-def create_mcp_toolset(region) -> McpToolset:
+def create_mcp_toolset(region, auth_scheme=None, auth_credential=None) -> McpToolset:
     # Matching working example pattern: https://chronicle.{region}.rep.googleapis.com/mcp
     secops_mcp_url = f"https://chronicle.{region}.rep.googleapis.com/mcp"
     
@@ -49,7 +44,9 @@ def create_mcp_toolset(region) -> McpToolset:
     return McpToolset(
         connection_params=StreamableHTTPConnectionParams(url=secops_mcp_url),
         header_provider=get_secops_headers,
-        errlog=None # explicitly None to prevent sys.stderr capturing (which cannot be pickled)
+        errlog=None, # explicitly None to prevent sys.stderr capturing (which cannot be pickled)
+        auth_scheme=auth_scheme,
+        auth_credential=auth_credential
     )
 
 def create_agent():
@@ -77,12 +74,37 @@ def create_agent():
     chronicle_project_id = os.environ.get("CHRONICLE_PROJECT_ID")
     gemini_auth_id = os.environ.get("GEMINI_AUTHORIZATION_ID")
 
-    secops_toolset = create_mcp_toolset(region)
+    oauth_client_id = os.environ.get("OAUTH_CLIENT_ID")
+    oauth_client_secret = os.environ.get("OAUTH_CLIENT_SECRET")
+
+    auth_scheme = OAuth2(
+        flows=OAuthFlows(
+            authorizationCode=OAuthFlowAuthorizationCode(
+                authorizationUrl="https://accounts.google.com/o/oauth2/auth",
+                tokenUrl="https://oauth2.googleapis.com/token",
+                scopes={
+                    "https://www.googleapis.com/auth/chronicle": "Chronicle API",
+                    "openid": "OpenID",
+                    #"email": "Email",
+                },
+            )
+        )
+    )
+
+    auth_credential = AuthCredential(
+        auth_type=AuthCredentialTypes.OAUTH2,
+        oauth2=OAuth2Auth(
+            client_id=oauth_client_id,
+            client_secret=oauth_client_secret,
+        ),
+    )
+
+    secops_toolset = create_mcp_toolset(region, auth_scheme, auth_credential)
 
     return Agent(
         name="secops_agent",
         model=Gemini(
-            model="gemini-2.5-pro",
+            model="gemini-3.1-flash-lite-preview",
             retry_options=types.HttpRetryOptions(attempts=3),
         ),
         instruction=f"""You are a Google SecOps assistant. 

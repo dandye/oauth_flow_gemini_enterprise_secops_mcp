@@ -1,3 +1,6 @@
 [submodule "agent-starter-pack"]
 	path = agent-starter-pack
 	url = https://github.com/GoogleCloudPlatform/agent-starter-pack.git
+[submodule "external/adk-python"]
+	path = external/adk-python
+	url = https://github.com/google/adk-python.git
