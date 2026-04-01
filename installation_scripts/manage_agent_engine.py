@@ -82,6 +82,8 @@ def get_requirements():
         "pydantic",
         "python-dotenv",
         "opentelemetry-sdk",
+        "opentelemetry-instrumentation-httpx",
+        "opentelemetry-instrumentation-fastapi",
         "opentelemetry-instrumentation-google-genai",
         "opentelemetry-exporter-gcp-logging",
         "mcp>=1.0.0",
@@ -163,14 +165,31 @@ def deploy(
         typer.secho(f"\nDeployment successful!", fg=typer.colors.GREEN, bold=True)
         typer.echo(f"Resource Name: {remote_app.resource_name}")
         
-        # Append new engine details to .env
+        # Update .env (comment out active old entries and append new one)
         try:
             engine_id = remote_app.resource_name.split('/')[-1]
+            
+            # 1. Read and comment out old active entries
+            new_lines = []
+            if os.path.exists(".env"):
+                with open(".env", "r") as f:
+                    for line in f:
+                        stripped = line.strip()
+                        # Only comment out if it's an UNCOMMENTED active definition
+                        if stripped.startswith("AGENT_ENGINE_RESOURCE_NAME=") or stripped.startswith("AGENT_ENGINE_ID="):
+                            new_lines.append(f"# {line}")
+                        else:
+                            new_lines.append(line)
+                
+                with open(".env", "w") as f:
+                    f.writelines(new_lines)
+            
+            # 2. Append new entries
             with open(".env", "a") as f:
                 f.write(f"\n# {description}\n")
                 f.write(f"AGENT_ENGINE_RESOURCE_NAME={remote_app.resource_name}\n")
                 f.write(f"AGENT_ENGINE_ID={engine_id}\n")
-            typer.secho("Updated .env with new engine configuration.", fg=typer.colors.GREEN)
+            typer.secho("Updated .env with new engine configuration (commented out older active entries).", fg=typer.colors.GREEN)
         except Exception as env_err:
             typer.secho(f"Warning: Failed to update .env: {env_err}", fg=typer.colors.YELLOW)
         
