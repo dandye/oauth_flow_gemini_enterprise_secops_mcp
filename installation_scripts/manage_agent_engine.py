@@ -163,6 +163,17 @@ def deploy(
         typer.secho(f"\nDeployment successful!", fg=typer.colors.GREEN, bold=True)
         typer.echo(f"Resource Name: {remote_app.resource_name}")
         
+        # Append new engine details to .env
+        try:
+            engine_id = remote_app.resource_name.split('/')[-1]
+            with open(".env", "a") as f:
+                f.write(f"\n# {description}\n")
+                f.write(f"AGENT_ENGINE_RESOURCE_NAME={remote_app.resource_name}\n")
+                f.write(f"AGENT_ENGINE_ID={engine_id}\n")
+            typer.secho("Updated .env with new engine configuration.", fg=typer.colors.GREEN)
+        except Exception as env_err:
+            typer.secho(f"Warning: Failed to update .env: {env_err}", fg=typer.colors.YELLOW)
+        
         if run_test:
             typer.echo("\nRunning smoke test...")
             try:
