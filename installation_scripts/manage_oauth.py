@@ -96,6 +96,7 @@ class OAuthManager:
         client_secret_file: Path,
         scopes: list[str],
         redirect_uri: str = "https://vertexaisearch.cloud.google.com/oauth-redirect",
+        pkce: bool = False,
     ) -> tuple[str, str, str]:
         """
         Generate OAuth authorization URI from client secret file.
@@ -139,6 +140,9 @@ class OAuthManager:
         authorization_url, state = flow.authorization_url(
             access_type="offline", include_granted_scopes="true", prompt="consent"
         )
+        
+        if pkce:
+            authorization_url += "&pkceVerificationEnabled=true"
 
         return authorization_url, client_id, client_secret
 
@@ -298,6 +302,9 @@ def setup(
     client_secret_file: Annotated[
         Path, typer.Argument(help="Path to OAuth client secret JSON file")
     ],
+    pkce: Annotated[
+        bool, typer.Option("--pkce", help="Enable PKCE query string parameter")
+    ] = False,
     env_file: Annotated[
         Path, typer.Option("--env-file", "-e", help="Path to environment file")
     ] = Path(".env"),
@@ -330,7 +337,7 @@ def setup(
 
     try:
         auth_uri, client_id, client_secret = manager.generate_oauth_uri(
-            client_secret_file, scopes_list
+            client_secret_file, scopes_list, pkce=pkce
         )
 
         # Save to environment
