@@ -42,6 +42,12 @@ include $(ENV_FILE)
 export
 endif
 
+# Derived variables
+GCP_STAGING_BUCKET_NAME = $(patsubst gs://%,%,$(GCP_STAGING_BUCKET))
+
+# Fallback variables (local CLI toggle)
+BUCKET ?= $(GCP_STAGING_BUCKET_NAME)
+
 # Agent module selection (default: agent for Pro model)
 AGENT_MODULE ?= agent
 
@@ -54,7 +60,6 @@ MANAGE_AGENT_ENGINE := installation_scripts/manage_agent_engine.py
 MANAGE_OAUTH := installation_scripts/manage_oauth.py
 MANAGE_DATASTORE := installation_scripts/manage_datastore.py
 MANAGE_RAG := installation_scripts/manage_rag.py
-MANAGE_GCS := installation_scripts/manage_gcs.py
 MANAGE_VERTEX_AI := installation_scripts/manage_vertex_ai.py
 
 # Validation targets
@@ -418,17 +423,15 @@ gcs-bucket-create: ## Create a new GCS bucket (use: BUCKET=bucket-name LOCATION=
 		echo "Error: BUCKET is required. Usage: make gcs-bucket-create BUCKET=bucket-name"; \
 		exit 1; \
 	fi
-	@$(PYTHON) $(MANAGE_GCS) bucket-create $(BUCKET) \
-		$(if $(LOCATION),--location $(LOCATION)) \
-		$(if $(STORAGE_CLASS),--storage-class $(STORAGE_CLASS)) \
-		--env-file $(ENV_FILE)
+	-@gcloud storage buckets create gs://$(BUCKET) \
+		$(if $(LOCATION),--location $(LOCATION)) 2>/dev/null || true
 
 gcs-bucket-info: ## Get information about a GCS bucket (use: BUCKET=bucket-name)
 	@if [ -z "$(BUCKET)" ]; then \
 		echo "Error: BUCKET is required. Usage: make gcs-bucket-info BUCKET=bucket-name"; \
 		exit 1; \
 	fi
-	@$(PYTHON) $(MANAGE_GCS) bucket-info $(BUCKET) --env-file $(ENV_FILE)
+	@gcloud storage buckets describe gs://$(BUCKET)
 
 # Vertex AI setup and verification targets
 vertex-ai-verify: ## Verify complete Vertex AI setup (APIs, auth, permissions)
