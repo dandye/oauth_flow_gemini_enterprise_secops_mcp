@@ -308,10 +308,6 @@ def setup(
     env_file: Annotated[
         Path, typer.Option("--env-file", "-e", help="Path to environment file")
     ] = Path(".env"),
-    scopes: Annotated[
-        str | None,
-        typer.Option("--scopes", "-s", help="Comma-separated OAuth scopes"),
-    ] = None,
 ):
     """
     Setup OAuth authorization from client secret file.
@@ -323,15 +319,11 @@ def setup(
     """
     manager = OAuthManager(env_file)
 
-    # Default scopes if not provided
-    if not scopes:
-        scopes_list = [
-            "https://www.googleapis.com/auth/chronicle",
-            "https://www.googleapis.com/auth/cloud-platform",
-            "openid",
-        ]
-    else:
-        scopes_list = [s.strip() for s in scopes.split(",")]
+    scopes_list = [
+        "https://www.googleapis.com/auth/chronicle",
+        "https://www.googleapis.com/auth/cloud-platform",
+        "openid",
+    ]
 
     typer.echo("Generating OAuth authorization URI...")
 
