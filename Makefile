@@ -441,12 +441,12 @@ vertex-ai-quota: ## Display quota information for Vertex AI services
 	@$(PYTHON) $(MANAGE_VERTEX_AI) check-quota --env-file $(ENV_FILE)
 
 # OAuth management targets
-oauth-setup: check-integration ## Interactive OAuth client setup from client_secret.json (use: make oauth-setup CLIENT_SECRET_FILE=path/to/client_secret.json [PKCE=1])
-	@if [ -z "$(CLIENT_SECRET_FILE)" ]; then \
-		echo "Error: CLIENT_SECRET_FILE is required. Usage: make oauth-setup CLIENT_SECRET_FILE=path/to/client_secret.json"; \
+oauth-setup: check-integration ## Interactive OAuth client setup from client_secret.json (use: make oauth-setup OAUTH_SECRETS_FILE=path/to/client_secret.json [PKCE=1])
+	@if [ -z "$(OAUTH_SECRETS_FILE)" ]; then \
+		echo "Error: OAUTH_SECRETS_FILE is required. Usage: make oauth-setup OAUTH_SECRETS_FILE=path/to/client_secret.json"; \
 		exit 1; \
 	fi
-	$(PYTHON) $(MANAGE_OAUTH) setup $(CLIENT_SECRET_FILE) --env-file $(ENV_FILE) $(if $(filter 1 true, $(PKCE)),--pkce)
+	$(PYTHON) $(MANAGE_OAUTH) setup $(OAUTH_SECRETS_FILE) --env-file $(ENV_FILE) $(if $(filter 1 true, $(PKCE)),--pkce)
 
 oauth-create-auth: ## Create OAuth authorization in Discovery Engine
 	@$(PYTHON) $(MANAGE_OAUTH) create-auth --env-file $(ENV_FILE)
