@@ -70,6 +70,7 @@ def get_env_vars():
         "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
         "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT": "32768",
+        "RUNNING_IN_CLOUD": "true",
     }
     # Remove None values
     return {k: v for k, v in env_vars.items() if v is not None}

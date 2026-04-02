@@ -130,7 +130,8 @@ async def get_current_datetime() -> str:
 
 def create_agent():
     logger.info("create_agent() entry")
-    load_dotenv()
+    if not os.environ.get("RUNNING_IN_CLOUD"):
+        load_dotenv()
     
     project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
     if not project_id and os.environ.get("REASONING_ENGINE_DEPLOYMENT") != "True":
