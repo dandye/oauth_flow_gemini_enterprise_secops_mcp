@@ -26,7 +26,7 @@ logger.setLevel(logging.DEBUG)
 logger.info("Agent module loaded, logger initialized.")
 
 def get_secops_headers(context) -> dict[str, str]:
-    logger.info("get_secops_headers called")
+    logger.debug("get_secops_headers called")
     
     chronicle_project_id = os.environ.get("CHRONICLE_PROJECT_ID")
     if not chronicle_project_id:
@@ -39,25 +39,25 @@ def get_secops_headers(context) -> dict[str, str]:
     }
 
     try:
-        logger.info(f"Context Type: {type(context)}")
+        logger.debug(f"Context Type: {type(context)}")
         
         if hasattr(context, "state"):
-            logger.info(f"context.state Type: {type(context.state)}")
-            logger.info(f"context.state Value: {context.state}")
+            logger.debug(f"context.state Type: {type(context.state)}")
+            logger.debug(f"context.state Value: {context.state}")
             
             # Case 1: Mapping (Dict, mappingproxy, etc.)
             if hasattr(context.state, "items"):
                 for key, val in context.state.items():
                     if isinstance(val, str) and val.startswith("ya29."):
-                        logger.info(f"Found token in context.state (items) with key '{key}'")
+                        logger.debug(f"Found token in context.state (items) with key '{key}'")
                         headers["Authorization"] = f"Bearer {val}"
                         break
             
             # Case 2: String
             elif isinstance(context.state, str):
-                logger.info("context.state is a string. Checking for 'ya29.'")
+                logger.debug("context.state is a string. Checking for 'ya29.'")
                 if "ya29." in context.state:
-                    logger.info("Found 'ya29.' in state string!")
+                    logger.debug("Found 'ya29.' in state string!")
                     try:
                         import json
                         # Try to parse as JSON if it looks like it
@@ -65,7 +65,7 @@ def get_secops_headers(context) -> dict[str, str]:
                             state_dict = json.loads(context.state)
                             for key, val in state_dict.items():
                                 if isinstance(val, str) and val.startswith("ya29."):
-                                    logger.info(f"Found token in context.state (parsed JSON) with key '{key}'")
+                                    logger.debug(f"Found token in context.state (parsed JSON) with key '{key}'")
                                     headers["Authorization"] = f"Bearer {val}"
                                     break
                     except Exception as parse_e:
@@ -77,24 +77,24 @@ def get_secops_headers(context) -> dict[str, str]:
                         match = re.search(r'(ya29\.[a-zA-Z0-9_\-]+)', context.state)
                         if match:
                             token = match.group(1)
-                            logger.info("Extracted token from state string using regex")
+                            logger.debug("Extracted token from state string using regex")
                             headers["Authorization"] = f"Bearer {token}"
 
         # If still not found, dump dir(context) and check _invocation_context
         if "Authorization" not in headers:
-            logger.info(f"Context Dir: {dir(context)}")
+            logger.debug(f"Context Dir: {dir(context)}")
             if hasattr(context, "_invocation_context"):
                 inv_ctx = context._invocation_context
-                logger.info(f"InvocationContext Type: {type(inv_ctx)}")
-                logger.info(f"InvocationContext Dir: {dir(inv_ctx)}")
+                logger.debug(f"InvocationContext Type: {type(inv_ctx)}")
+                logger.debug(f"InvocationContext Dir: {dir(inv_ctx)}")
                 if hasattr(inv_ctx, "state"):
-                    logger.info(f"inv_ctx.state Value: {getattr(inv_ctx, 'state')}")
+                    logger.debug(f"inv_ctx.state Value: {getattr(inv_ctx, 'state')}")
 
     except Exception as e:
         logger.error(f"Error in get_secops_headers Shotgun Logging: {e}", exc_info=True)
 
     safe_headers = {k: "REDACTED" if k == "Authorization" else v for k, v in headers.items()}
-    logger.info(f"Returning headers: {safe_headers}")
+    logger.debug(f"Returning headers: {safe_headers}")
     
     return headers
 
