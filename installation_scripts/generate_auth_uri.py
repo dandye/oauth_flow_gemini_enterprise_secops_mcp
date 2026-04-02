@@ -5,6 +5,7 @@ This URI is used when registering an Authorization resource in Google Cloud.
 """
 
 import os
+import argparse
 from urllib.parse import urlencode, quote_plus, quote
 from dotenv import load_dotenv
 
@@ -23,6 +24,10 @@ DEFAULT_SCOPES = [
 ENV_PATH = "secops-agent/.env"
 
 def main():
+    parser = argparse.ArgumentParser(description="Construct Gemini Enterprise Authorization URI.")
+    parser.add_argument("--pkce", action="store_true", help="Enable PKCE query string parameter.")
+    args = parser.parse_args()
+
     # Load environment variables from .env file
     if os.path.exists(ENV_PATH):
         load_dotenv(ENV_PATH)
@@ -46,6 +51,9 @@ def main():
         "access_type": "offline",
         "prompt": "consent",
     }
+    
+    if args.pkce:
+        params["pkceVerificationEnabled"] = "true"
 
     # URL encode parameters
     # Note: urllib.parse.urlencode handles the space-to-plus (+) or %20 conversion
