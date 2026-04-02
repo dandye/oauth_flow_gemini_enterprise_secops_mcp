@@ -8,3 +8,7 @@ __pycache__/
 internal_notes..md
 scratch/
 .env
+.env.bak
+.env*
+
+internal_notes.md

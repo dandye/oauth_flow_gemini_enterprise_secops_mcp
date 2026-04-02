@@ -228,6 +228,9 @@ agentspace-update-agent: ## Update agent configuration in AgentSpace
 agentspace-list-agents: ## List all agents in AgentSpace app
 	$(PYTHON) $(MANAGE_AGENTSPACE) list-agents --env-file $(ENV_FILE)
 
+agentspace-export-csv: ## Export a comprehensive CSV report of all apps and agents
+	$(PYTHON) $(MANAGE_AGENTSPACE) export-csv --env-file $(ENV_FILE)
+
 agentspace-list-apps: ## List all apps in AgentSpace collection
 	$(PYTHON) $(MANAGE_AGENTSPACE) list-apps --env-file $(ENV_FILE)
 
@@ -520,11 +523,11 @@ ifndef AGENT_ENGINE_RESOURCE_NAME
 	$(error AGENT_ENGINE_RESOURCE_NAME is required. Set it in your .env file or run agent-engine-deploy first)
 endif
 	$(eval ENGINE_ID := $(shell echo $(AGENT_ENGINE_RESOURCE_NAME) | rev | cut -d'/' -f1 | rev))
-	gcloud logging read 'resource.labels.reasoning_engine_id="$(ENGINE_ID)"' \
+	gcloud logging read 'resource.labels.reasoning_engine_id="$(ENGINE_ID)" $(if $(SEVERITY),AND severity=$(SEVERITY))' \
 		--project=$(GCP_PROJECT_ID) \
 		--format="table(timestamp,severity,textPayload)" \
-		--freshness=10m \
-		--order=desc
+		--freshness=30m \
+		--order=asc
 
 agentspace-redeploy: agentspace-update ## Update AgentSpace configuration
 	@echo "AgentSpace configuration update completed successfully!"
