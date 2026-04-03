@@ -66,10 +66,9 @@ Generate the Authorization URI and store the required credentials.
 
 ```bash
 # Provide the path to the downloaded JSON file from Step 3:
-export CLIENT_SECRET_JSON="path/to/client_secret.json"
+export OAUTH_SECRETS_FILE="path/to/client_secret.json"
 
-python manage.py oauth setup $CLIENT_SECRET_JSON \
-  --scopes "https://www.googleapis.com/auth/chronicle,https://www.googleapis.com/auth/cloud-platform,openid"
+python manage.py oauth setup $OAUTH_SECRETS_FILE
 ```
 
 ## 5. Create OAuth Authorization
@@ -157,7 +156,7 @@ Alternatively, you can just use the Makefile for simplified task execution (afte
 
 ```bash
 make agent-engine-deploy
-make oauth-setup CLIENT_SECRET=client_secret.json
+make oauth-setup OAUTH_SECRETS_FILE=client_secret.json
 make oauth-create-auth
 make agentspace-create-app APP_NAME="My App"
 make agentspace-register

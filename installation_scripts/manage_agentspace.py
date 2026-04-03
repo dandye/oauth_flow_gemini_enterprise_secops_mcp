@@ -1013,25 +1013,22 @@ class AgentSpaceManager:
                 typer.echo(f"Response: {e.response.text}", err=True)
             return False
 
-    def list_apps(self, show_raw: bool = True) -> bool:
+    def _get_apps_data(self) -> list:
         """
-        List all apps in the AgentSpace collection.
-
-        Args:
-            show_raw: If True, show raw JSON response for debugging
+        Fetch all apps in the AgentSpace collection from API.
 
         Returns:
-            True if successful, False otherwise
+            List of dictionaries, each representing an App (engine).
         """
         project_number = self.env_vars.get("GCP_PROJECT_NUMBER")
         if not project_number:
             typer.echo("Error: GCP_PROJECT_NUMBER not found in environment", err=True)
-            return False
+            return []
 
         access_token = self._get_access_token()
         if not access_token:
             typer.echo("Error: Failed to get access token", err=True)
-            return False
+            return []
 
         collection = self.env_vars.get("AGENTSPACE_COLLECTION", "default_collection")
         url = (
@@ -1047,55 +1044,104 @@ class AgentSpaceManager:
         try:
             response = requests.get(url, headers=headers)
             response.raise_for_status()
-
             result = response.json()
-            engines = result.get("engines", [])
-
-            if show_raw:
-                import json as json_lib
-
-                typer.echo("\n=== RAW JSON RESPONSE ===")
-                typer.echo(json_lib.dumps(result, indent=2))
-                typer.echo("=== END RAW JSON ===\n")
-
-            if not engines:
-                typer.echo("No apps found in AgentSpace collection.")
-                return True
-
-            typer.echo(f"\nFound {len(engines)} app(s) in AgentSpace:\n")
-            for i, engine in enumerate(engines, 1):
-                name = engine.get("name", "")
-                app_id = name.split("/")[-1] if "/" in name else name
-                display_name = engine.get("displayName", "N/A")
-                solution_type = engine.get("solutionType", "N/A")
-                data_store_ids = engine.get("dataStoreIds", [])
-                create_time = engine.get("createTime", "N/A")
-
-                typer.echo(f"{i}. App ID: {app_id}")
-                typer.echo(f"   Display Name: {display_name}")
-                typer.echo(f"   Solution Type: {solution_type}")
-
-                if data_store_ids:
-                    typer.echo(f"   Data Stores: {', '.join(data_store_ids)}")
-                else:
-                    typer.echo("   Data Stores: None")
-
-                typer.echo(f"   Create Time: {create_time}")
-
-                if show_raw:
-                    typer.echo("\n   === RAW ENGINE DATA ===")
-                    typer.echo(json_lib.dumps(engine, indent=4))
-                    typer.echo("   === END ENGINE DATA ===")
-
-                typer.echo()
-
-            return True
+            return result.get("engines", [])
 
         except requests.exceptions.RequestException as e:
-            typer.echo(f"Error listing apps: {e}", err=True)
+            typer.echo(f"Error listing apps data: {e}", err=True)
             if hasattr(e.response, "text"):
                 typer.echo(f"Response: {e.response.text}", err=True)
+            return []
+
+    def list_apps(self, show_raw: bool = True) -> bool:
+        """
+        List all apps in the AgentSpace collection.
+
+        Args:
+            show_raw: If True, show raw JSON response for debugging
+
+        Returns:
+            True if successful, False otherwise
+        """
+        engines = self._get_apps_data()
+        if not engines:
+            typer.echo("No apps found in AgentSpace collection or error occurred.")
             return False
+
+        if show_raw:
+            import json as json_lib
+            typer.echo("\n=== RAW JSON RESPONSE ===")
+            typer.echo(json_lib.dumps({"engines": engines}, indent=2))
+            typer.echo("=== END RAW JSON ===\n")
+
+        typer.echo(f"\nFound {len(engines)} app(s) in AgentSpace:\n")
+        import json as json_lib # Ensure imported
+        for i, engine in enumerate(engines, 1):
+            name = engine.get("name", "")
+            app_id = name.split("/")[-1] if "/" in name else name
+            display_name = engine.get("displayName", "N/A")
+            solution_type = engine.get("solutionType", "N/A")
+            data_store_ids = engine.get("dataStoreIds", [])
+            create_time = engine.get("createTime", "N/A")
+
+            typer.echo(f"{i}. App ID: {app_id}")
+            typer.echo(f"   Display Name: {display_name}")
+            typer.echo(f"   Solution Type: {solution_type}")
+
+            if data_store_ids:
+                typer.echo(f"   Data Stores: {', '.join(data_store_ids)}")
+            else:
+                typer.echo("   Data Stores: None")
+
+            typer.echo(f"   Create Time: {create_time}")
+
+            if show_raw:
+                typer.echo("\n   === RAW ENGINE DATA ===")
+                typer.echo(json_lib.dumps(engine, indent=4))
+                typer.echo("   === END ENGINE DATA ===")
+
+            typer.echo()
+
+        return True
+
+    def _get_agents_data(self, app_id: str) -> list:
+        """
+        Fetch all agents in the AgentSpace app from API.
+
+        Args:
+            app_id: The ID of the app (engine) to list agents for.
+
+        Returns:
+            List of dictionaries, each representing an Agent.
+        """
+        project_number = self.env_vars.get("GCP_PROJECT_NUMBER")
+        if not project_number:
+            typer.echo("Error: GCP_PROJECT_NUMBER not found in environment", err=True)
+            return []
+
+        access_token = self._get_access_token()
+        if not access_token:
+            typer.echo("Error: Failed to get access token", err=True)
+            return []
+
+        url = f"{DISCOVERY_ENGINE_API_BASE}/projects/{project_number}/locations/global/collections/default_collection/engines/{app_id}/assistants/default_assistant/agents"
+
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "X-Goog-User-Project": project_number,
+        }
+
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            result = response.json()
+            return result.get("agents", [])
+
+        except requests.exceptions.RequestException as e:
+            typer.echo(f"Error listing agents data for app {app_id}: {e}", err=True)
+            if hasattr(e.response, "text"):
+                typer.echo(f"Response: {e.response.text}", err=True)
+            return []
 
     def list_agents(self, show_raw: bool = True) -> bool:
         """
@@ -1107,98 +1153,74 @@ class AgentSpaceManager:
         Returns:
             True if successful, False otherwise
         """
-        project_number = self.env_vars.get("GCP_PROJECT_NUMBER")
-        if not project_number:
-            typer.echo("Error: GCP_PROJECT_NUMBER not found in environment", err=True)
-            return False
-
         as_app = self.env_vars.get("AGENTSPACE_APP_ID")
         if not as_app:
             typer.echo("Error: AGENTSPACE_APP_ID not found in environment", err=True)
             return False
 
-        access_token = self._get_access_token()
-        if not access_token:
-            typer.echo("Error: Failed to get access token", err=True)
+        agents = self._get_agents_data(as_app)
+        if not agents:
+            typer.echo("No agents found in AgentSpace app or error occurred.")
             return False
 
-        url = f"{DISCOVERY_ENGINE_API_BASE}/projects/{project_number}/locations/global/collections/default_collection/engines/{as_app}/assistants/default_assistant/agents"
+        if show_raw:
+            import json as json_lib
+            typer.echo("\n=== RAW JSON RESPONSE ===")
+            typer.echo(json_lib.dumps({"agents": agents}, indent=2))
+            typer.echo("=== END RAW JSON ===\n")
 
+        # Get solution type ONCE for this app!
+        project_number = self.env_vars.get("GCP_PROJECT_NUMBER")
+        engine_url = (
+            f"{DISCOVERY_ENGINE_API_BASE}/projects/{project_number}/"
+            f"locations/global/collections/default_collection/engines/{as_app}"
+        )
         headers = {
-            "Authorization": f"Bearer {access_token}",
+            "Authorization": f"Bearer {self._get_access_token()}",
             "X-Goog-User-Project": project_number,
         }
-
+        solution_type = "N/A"
         try:
-            response = requests.get(url, headers=headers)
+            response = requests.get(engine_url, headers=headers)
             response.raise_for_status()
+            engine_data = response.json()
+            solution_type = engine_data.get("solutionType", "N/A")
+        except requests.exceptions.RequestException as e:
+            typer.echo(f"Error fetching app details for solution type: {e}", err=True)
 
-            result = response.json()
-            agents = result.get("agents", [])
+        typer.echo(f"\nFound {len(agents)} agent(s) in AgentSpace:\n")
+        typer.echo(f"Engine Solution Type: {solution_type}\n")
+
+        import json as json_lib # Ensure imported
+        for i, agent in enumerate(agents, 1):
+            name = agent.get("name", "")
+            agent_id = name.split("/")[-1] if "/" in name else name
+            display_name = agent.get("displayName", "N/A")
+            description = agent.get("description", "N/A")
+
+            typer.echo(f"{i}. Agent ID: {agent_id}")
+            typer.echo(f"   Display Name: {display_name}")
+            typer.echo(f"   Description: {description}")
+
+            # Show tool description if available
+            adk_def = agent.get("adk_agent_definition", {})
+            tool_settings = adk_def.get("tool_settings", {})
+            if tool_settings.get("tool_description"):
+                typer.echo(f"   Tool Description: {tool_settings['tool_description']}")
+
+            # Show reasoning engine if available
+            prov_engine = adk_def.get("provisioned_reasoning_engine", {})
+            if prov_engine.get("reasoning_engine"):
+                typer.echo(f"   Reasoning Engine: {prov_engine['reasoning_engine']}")
 
             if show_raw:
-                import json as json_lib
+                typer.echo("\n   === RAW AGENT DATA ===")
+                typer.echo(json_lib.dumps(agent, indent=4))
+                typer.echo("   === END AGENT DATA ===")
 
-                typer.echo("\n=== RAW JSON RESPONSE ===")
-                typer.echo(json_lib.dumps(result, indent=2))
-                typer.echo("=== END RAW JSON ===\n")
+            typer.echo()
 
-            if not agents:
-                typer.echo("No agents found in AgentSpace app.")
-                return True
-
-            # Get engine details to show solution type
-            engine_url = (
-                f"{DISCOVERY_ENGINE_API_BASE}/projects/{project_number}/"
-                f"locations/global/collections/default_collection/engines/{as_app}"
-            )
-            engine_response = self._make_request("GET", engine_url)
-            solution_type = "N/A"
-            if engine_response:
-                engine_data = engine_response.json()
-                solution_type = engine_data.get("solutionType", "N/A")
-
-            typer.echo(f"\nFound {len(agents)} agent(s) in AgentSpace:\n")
-            typer.echo(f"Engine Solution Type: {solution_type}\n")
-            for i, agent in enumerate(agents, 1):
-                name = agent.get("name", "")
-                agent_id = name.split("/")[-1] if "/" in name else name
-                display_name = agent.get("displayName", "N/A")
-                description = agent.get("description", "N/A")
-
-                typer.echo(f"{i}. Agent ID: {agent_id}")
-                typer.echo(f"   Display Name: {display_name}")
-                typer.echo(f"   Description: {description}")
-
-                # Show tool description if available
-                adk_def = agent.get("adk_agent_definition", {})
-                tool_settings = adk_def.get("tool_settings", {})
-                if tool_settings.get("tool_description"):
-                    typer.echo(
-                        f"   Tool Description: {tool_settings['tool_description']}"
-                    )
-
-                # Show reasoning engine if available
-                prov_engine = adk_def.get("provisioned_reasoning_engine", {})
-                if prov_engine.get("reasoning_engine"):
-                    typer.echo(
-                        f"   Reasoning Engine: {prov_engine['reasoning_engine']}"
-                    )
-
-                if show_raw:
-                    typer.echo("\n   === RAW AGENT DATA ===")
-                    typer.echo(json_lib.dumps(agent, indent=4))
-                    typer.echo("   === END AGENT DATA ===")
-
-                typer.echo()
-
-            return agents
-
-        except requests.exceptions.RequestException as e:
-            typer.echo(f"Error listing agents: {e}", err=True)
-            if hasattr(e.response, "text"):
-                typer.echo(f"Response: {e.response.text}", err=True)
-            return []
+        return True
 
     def get_app_details(self, app_id: str) -> bool:
         """
@@ -1363,6 +1385,93 @@ class AgentSpaceManager:
             return True
         else:
             typer.secho(" AgentSpace search test failed!", fg=typer.colors.RED)
+            return False
+
+    def export_report_csv(self, filename: str) -> bool:
+        """
+        Export a comprehensive report of all apps and their registered agents to a CSV file.
+
+        Args:
+            filename: The name/path of the CSV file to create.
+
+        Returns:
+            True if successful, False otherwise
+        """
+        import csv
+
+        typer.echo(f"\n📊 Generating CSV report...")
+        apps = self._get_apps_data()
+        if not apps:
+            typer.echo("Error: No apps found or error occurred while fetching apps data.", err=True)
+            return False
+
+        field_names = [
+            "App ID",
+            "App Display Name",
+            "Agent ID",
+            "Agent Display Name",
+            "Description",
+            "State",
+            "Reasoning Engine Pointer",
+        ]
+
+        try:
+            with open(filename, mode="w", newline="", encoding="utf-8") as csv_file:
+                writer = csv.DictWriter(csv_file, fieldnames=field_names)
+                writer.writeheader()
+
+                for app in apps:
+                    name = app.get("name", "")
+                    app_id = name.split("/")[-1] if "/" in name else name
+                    app_display_name = app.get("displayName", "N/A")
+
+                    typer.echo(f"  Fetching agents for app: {app_display_name} ({app_id})...")
+                    agents = self._get_agents_data(app_id)
+
+                    if not agents:
+                        # Write an entry for the app with no agents
+                        writer.writerow(
+                            {
+                                "App ID": app_id,
+                                "App Display Name": app_display_name,
+                                "Agent ID": "None",
+                                "Agent Display Name": "N/A",
+                                "Description": "N/A",
+                                "State": "N/A",
+                                "Reasoning Engine Pointer": "N/A",
+                            }
+                        )
+                        continue
+
+                    for agent in agents:
+                        agent_name = agent.get("name", "")
+                        agent_id_str = agent_name.split("/")[-1] if "/" in agent_name else agent_name
+                        agent_display_name = agent.get("displayName", "N/A")
+                        description = agent.get("description", "N/A")
+                        state = agent.get("state", "N/A")
+
+                        # Get reasoning engine pointer (handle both snake_case and camelCase API responses)
+                        adk_def = agent.get("adkAgentDefinition") or agent.get("adk_agent_definition") or {}
+                        prov_reasoning_engine = adk_def.get("provisionedReasoningEngine") or adk_def.get("provisioned_reasoning_engine") or {}
+                        reasoning_engine = prov_reasoning_engine.get("reasoningEngine") or prov_reasoning_engine.get("reasoning_engine") or "N/A"
+
+                        writer.writerow(
+                            {
+                                "App ID": app_id,
+                                "App Display Name": app_display_name,
+                                "Agent ID": agent_id_str,
+                                "Agent Display Name": agent_display_name,
+                                "Description": description,
+                                "State": state,
+                                "Reasoning Engine Pointer": reasoning_engine,
+                            }
+                        )
+
+            typer.secho(f"✅ CSV report exported successfully to: {filename}", fg=typer.colors.GREEN)
+            return True
+
+        except Exception as e:
+            typer.secho(f"❌ Failed to export CSV report: {e}", fg=typer.colors.RED, err=True)
             return False
 
 
@@ -1583,6 +1692,20 @@ def list_agents(
     # the cli just prints the results and ignores the returned list
     manager.list_agents(show_raw=raw)
 
+@app.command()
+def export_csv(
+    filename: Annotated[
+        str, typer.Option("--filename", "-f", help="Name/path of the CSV file to create.")
+    ] = "agents_report.csv",
+    env_file: Annotated[
+        Path, typer.Option(help="Path to the environment file.")
+    ] = Path(".env"),
+) -> None:
+    """Export a comprehensive report of all apps and their registered agents to a CSV file."""
+    manager = AgentSpaceManager(env_file)
+    if not manager.export_report_csv(filename):
+        raise typer.Exit(code=1)
+
 
 @app.command()
 def get_app_details(
@@ -1732,6 +1855,72 @@ def delete_app(
     """
     manager = AgentSpaceManager(env_file)
     if not manager.delete_app(app_id, force):
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def unified_register(
+    env_file: Annotated[
+        Path, typer.Option(help="Path to the environment file.")
+    ] = Path(".env"),
+) -> None:
+    """
+    Combined Wizard: Create OAuth Authorization and Register Agent in AgentSpace.
+
+    This command combines `make oauth-create-auth` and `make agentspace-register` into
+    a single frictionless terminal wizard without manual copy-pasting.
+
+    Examples:
+        python manage.py agentspace unified-register
+    """
+    manager = AgentSpaceManager(env_file)
+
+    # Check if OAuth configuration is available
+    if not manager.env_vars.get("OAUTH_SECRETS_FILE"):
+        typer.secho(
+            " Error: OAUTH_SECRETS_FILE not found in environment.", fg=typer.colors.RED
+        )
+        typer.echo("Please complete SecOps OAuth setup first!")
+        raise typer.Exit(code=1)
+
+    # Dynamically import OAuthManager to avoid circular imports (if any)
+    from installation_scripts.manage_oauth import OAuthManager
+
+    oauth_manager = OAuthManager(env_file)
+
+    # Get values from .env
+    client_id = oauth_manager.env_vars.get("OAUTH_CLIENT_ID")
+    client_secret = oauth_manager.env_vars.get("OAUTH_CLIENT_SECRET")
+    auth_uri = oauth_manager.env_vars.get("OAUTH_AUTH_URI")
+
+    if not all([client_id, client_secret, auth_uri]):
+        typer.secho(
+            " Error: OAuth credentials (Client ID, Secret, URI) not found in .env.",
+            fg=typer.colors.RED,
+        )
+        typer.echo("Please complete SecOps OAuth setup to populate them first!")
+        raise typer.Exit(code=1)
+
+    # Use existing OAUTH_AUTH_ID or generate a new one
+    import uuid
+
+    auth_id = oauth_manager.env_vars.get("OAUTH_AUTH_ID") or f"auth-{uuid.uuid4().hex[:8]}"
+    
+    typer.echo(f"Creating OAuth Authorization '{auth_id}'...")
+
+    # 1. Create Authorization
+    if oauth_manager.create_authorization(auth_id, client_id, client_secret, auth_uri):
+        typer.echo("\nOAuth Authorization created successfully. Now linking Agent in AgentSpace...")
+        
+        # 2. Register Agent sequentially
+        if manager.register_agent(force=True):
+            typer.secho("\n✨ Wizard Link Successful!", fg=typer.colors.GREEN, bold=True)
+            return
+        else:
+            typer.secho("\n❌ Failed to Register Agent in AgentSpace", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+    else:
+        typer.secho("\n❌ Failed to Create OAuth Authorization", fg=typer.colors.RED)
         raise typer.Exit(code=1)
 
 

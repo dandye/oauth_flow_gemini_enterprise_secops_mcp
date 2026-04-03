@@ -42,6 +42,12 @@ include $(ENV_FILE)
 export
 endif
 
+# Derived variables
+GCP_STAGING_BUCKET_NAME = $(patsubst gs://%,%,$(GCP_STAGING_BUCKET))
+
+# Fallback variables (local CLI toggle)
+BUCKET ?= $(GCP_STAGING_BUCKET_NAME)
+
 # Agent module selection (default: agent for Pro model)
 AGENT_MODULE ?= agent
 
@@ -54,7 +60,6 @@ MANAGE_AGENT_ENGINE := installation_scripts/manage_agent_engine.py
 MANAGE_OAUTH := installation_scripts/manage_oauth.py
 MANAGE_DATASTORE := installation_scripts/manage_datastore.py
 MANAGE_RAG := installation_scripts/manage_rag.py
-MANAGE_GCS := installation_scripts/manage_gcs.py
 MANAGE_VERTEX_AI := installation_scripts/manage_vertex_ai.py
 
 # Validation targets
@@ -180,6 +185,14 @@ agentspace-register: check-integration ## Register agent with AgentSpace (use FO
 		echo "========================================"; \
 	fi
 
+agentspace-unified-register: check-prereqs ## Unified Wizard: Create OAuth and immediately Link Agent in AgentSpace
+	@$(PYTHON) $(MANAGE_AGENTSPACE) unified-register --env-file $(ENV_FILE)
+
+unified-wizard-workflow: oauth-setup agentspace-unified-register ## Interactive setup + auto registration sequential wizard (use: OAUTH_SECRETS_FILE=path/to/client_secret.json [PKCE=1])
+	@echo "========================================"
+	@echo "✨ Wizard Multi-Step Flow Completed Successfully!"
+	@echo "========================================"
+
 agentspace-update: check-integration ## Update existing AgentSpace agent configuration
 	$(PYTHON) $(MANAGE_AGENTSPACE) update --env-file $(ENV_FILE)
 
@@ -227,6 +240,9 @@ agentspace-update-agent: ## Update agent configuration in AgentSpace
 
 agentspace-list-agents: ## List all agents in AgentSpace app
 	$(PYTHON) $(MANAGE_AGENTSPACE) list-agents --env-file $(ENV_FILE)
+
+agentspace-export-csv: ## Export a comprehensive CSV report of all apps and agents
+	$(PYTHON) $(MANAGE_AGENTSPACE) export-csv --env-file $(ENV_FILE)
 
 agentspace-list-apps: ## List all apps in AgentSpace collection
 	$(PYTHON) $(MANAGE_AGENTSPACE) list-apps --env-file $(ENV_FILE)
@@ -415,17 +431,15 @@ gcs-bucket-create: ## Create a new GCS bucket (use: BUCKET=bucket-name LOCATION=
 		echo "Error: BUCKET is required. Usage: make gcs-bucket-create BUCKET=bucket-name"; \
 		exit 1; \
 	fi
-	@$(PYTHON) $(MANAGE_GCS) bucket-create $(BUCKET) \
-		$(if $(LOCATION),--location $(LOCATION)) \
-		$(if $(STORAGE_CLASS),--storage-class $(STORAGE_CLASS)) \
-		--env-file $(ENV_FILE)
+	-@gcloud storage buckets create gs://$(BUCKET) \
+		$(if $(LOCATION),--location $(LOCATION)) 2>/dev/null || true
 
 gcs-bucket-info: ## Get information about a GCS bucket (use: BUCKET=bucket-name)
 	@if [ -z "$(BUCKET)" ]; then \
 		echo "Error: BUCKET is required. Usage: make gcs-bucket-info BUCKET=bucket-name"; \
 		exit 1; \
 	fi
-	@$(PYTHON) $(MANAGE_GCS) bucket-info $(BUCKET) --env-file $(ENV_FILE)
+	@gcloud storage buckets describe gs://$(BUCKET)
 
 # Vertex AI setup and verification targets
 vertex-ai-verify: ## Verify complete Vertex AI setup (APIs, auth, permissions)
@@ -438,12 +452,12 @@ vertex-ai-quota: ## Display quota information for Vertex AI services
 	@$(PYTHON) $(MANAGE_VERTEX_AI) check-quota --env-file $(ENV_FILE)
 
 # OAuth management targets
-oauth-setup: ## Interactive OAuth client setup from client_secret.json (use: make oauth-setup CLIENT_SECRET=path/to/client_secret.json)
-	@if [ -z "$(CLIENT_SECRET)" ]; then \
-		echo "Error: CLIENT_SECRET is required. Usage: make oauth-setup CLIENT_SECRET=path/to/client_secret.json"; \
+oauth-setup: check-integration ## Interactive OAuth client setup from client_secret.json (use: make oauth-setup OAUTH_SECRETS_FILE=path/to/client_secret.json [PKCE=1])
+	@if [ -z "$(OAUTH_SECRETS_FILE)" ]; then \
+		echo "Error: OAUTH_SECRETS_FILE is required. Usage: make oauth-setup OAUTH_SECRETS_FILE=path/to/client_secret.json"; \
 		exit 1; \
 	fi
-	$(PYTHON) $(MANAGE_OAUTH) setup $(CLIENT_SECRET) --env-file $(ENV_FILE)
+	$(PYTHON) $(MANAGE_OAUTH) setup $(OAUTH_SECRETS_FILE) --env-file $(ENV_FILE) $(if $(filter 1 true, $(PKCE)),--pkce)
 
 oauth-create-auth: ## Create OAuth authorization in Discovery Engine
 	@$(PYTHON) $(MANAGE_OAUTH) create-auth --env-file $(ENV_FILE)
@@ -520,11 +534,11 @@ ifndef AGENT_ENGINE_RESOURCE_NAME
 	$(error AGENT_ENGINE_RESOURCE_NAME is required. Set it in your .env file or run agent-engine-deploy first)
 endif
 	$(eval ENGINE_ID := $(shell echo $(AGENT_ENGINE_RESOURCE_NAME) | rev | cut -d'/' -f1 | rev))
-	gcloud logging read 'resource.labels.reasoning_engine_id="$(ENGINE_ID)"' \
+	gcloud logging read 'resource.labels.reasoning_engine_id="$(ENGINE_ID)" $(if $(SEVERITY),AND severity=$(SEVERITY))' \
 		--project=$(GCP_PROJECT_ID) \
 		--format="table(timestamp,severity,textPayload)" \
-		--freshness=10m \
-		--order=desc
+		--freshness=30m \
+		--order=asc
 
 agentspace-redeploy: agentspace-update ## Update AgentSpace configuration
 	@echo "AgentSpace configuration update completed successfully!"
@@ -535,8 +549,10 @@ redeploy-all: agent-engine-deploy agentspace-update ## Redeploy agent engine and
 oauth-workflow: oauth-create-auth oauth-verify ## Complete OAuth setup (create auth and verify)
 	@echo "OAuth authorization setup completed successfully!"
 
-full-deploy-with-oauth: setup agent-engine-deploy oauth-workflow agentspace-link-agent ## Deploy agent with OAuth and link to AgentSpace
-	@echo "Full deployment with OAuth completed successfully!"
+full-deploy-with-oauth: setup agent-engine-deploy oauth-setup agentspace-unified-register ## Frictionless End-to-End single command deployment (use: OAUTH_SECRETS_FILE=path/to/client_secret.json)
+	@echo "========================================"
+	@echo "✨ Ultimate Full Deployment with secrets Successful!"
+	@echo "========================================"
 
 status: agentspace-verify ## Check status of AgentSpace registration
 	@echo "Status check completed!"

@@ -1,46 +1,101 @@
 import os
 import google.auth
-from google.adk.auth import AuthScheme, AuthCredential, AuthCredentialTypes, OAuth2Auth
+from google.adk.auth import AuthScheme, AuthCredential
 from google.adk.agents import Agent
 from google.adk.models import Gemini
+from google.adk.tools import FunctionTool
 from google.adk.tools.mcp_tool import McpToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
 from google.genai import types
+
+
 
 from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumentor
 from dotenv import load_dotenv
 import logging
 import sys
 
-def get_secops_headers(context) -> dict[str, str]:
-    # Read from environment AT RUNTIME
-    chronicle_project_id = os.environ.get("CHRONICLE_PROJECT_ID")
-    customer_id = os.environ.get("CHRONICLE_CUSTOMER_ID")
-    gemini_auth_id = os.environ.get("GEMINI_AUTHORIZATION_ID")
-    region = os.environ.get("CHRONICLE_REGION", "us")
+# Configure logging for Reasoning Engine environment
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    stream=sys.stdout
+)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+logger.debug("Agent module loaded, logger initialized.")
 
+def get_secops_headers(context) -> dict[str, str]:
+    
+    chronicle_project_id = os.environ.get("CHRONICLE_PROJECT_ID")
+    if not chronicle_project_id:
+        raise ValueError("CHRONICLE_PROJECT_ID is missing from environment! OneMCP tool calls will fail without it.")
+    
     headers = {
         "Accept": "text/event-stream",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "x-goog-user-project": chronicle_project_id
     }
-    
-    # Only add the project header if we actually have a value
-    if chronicle_project_id:
-        headers["x-goog-user-project"] = chronicle_project_id
-    else:
-        # Critical for tool execution, though list_tools might still work
-        logging.critical("CHRONICLE_PROJECT_ID is missing from environment! OneMCP tool calls *will* fail without a routing context.")
 
-    if context and context.state and gemini_auth_id:
-        user_token = context.state.get(gemini_auth_id)
-        if user_token:
-            headers["Authorization"] = f"Bearer {user_token}"
-            # Log first few chars for debugging without leaking full sensitive token in recap
-            logging.info(f"DEBUG: Tool Call Auth Header present (starts with: {user_token[:10]}...)")
-            
-    return headers
+    try:
+        if hasattr(context, "state"):
+            if hasattr(context.state, "items"):
+                for key, val in context.state.items():
+                    if isinstance(val, str) and val.startswith("ya29."):
+                        headers["Authorization"] = f"Bearer {val}"
+                        return headers
+    except Exception as e:
+        logger.error(f"Error in get_secops_headers: {e}", exc_info=True)
+    # We should have returned already. If this is executed, we need to understand the other possible paths through the code.
+    # try:
+    #     logger.debug("Failed fast mapping extraction. Adding fallback catches.")
+    #     logger.debug(f"Context Type: {type(context)}")
+    #     
+    #     if hasattr(context, "state"):
+    #         logger.debug(f"context.state Type: {type(context.state)}")
+    #         
+    #         # Case 2: String
+    #         if isinstance(context.state, str):
+    #             logger.debug("context.state is a string. Checking for 'ya29.'")
+    #             if "ya29." in context.state:
+    #                 logger.debug("Found 'ya29.' in state string!")
+    #                 try:
+    #                     import json
+    #                     if context.state.strip().startswith("{"):
+    #                         state_dict = json.loads(context.state)
+    #                         for key, val in state_dict.items():
+    #                             if isinstance(val, str) and val.startswith("ya29."):
+    #                                 logger.debug(f"Found token in parsed JSON with key '{key}'")
+    #                                 headers["Authorization"] = f"Bearer {val}"
+    #                                 return headers
+    #                 except Exception as parse_e:
+    #                     logger.warning(f"Failed to parse state string as JSON: {parse_e}")
+    #                 
+    #                 if "Authorization" not in headers:
+    #                     import re
+    #                     match = re.search(r'(ya29\.[a-zA-Z0-9_\-]+)', context.state)
+    #                     if match:
+    #                         token = match.group(1)
+    #                         logger.debug("Extracted token using regex")
+    #                         headers["Authorization"] = f"Bearer {token}"
+    #                         return headers
 
-def create_mcp_toolset(region) -> McpToolset:
+    #     # Dump dir(context) and check _invocation_context if everything else failed
+    #     if "Authorization" not in headers:
+    #         logger.debug(f"Context Dir: {dir(context)}")
+    #         if hasattr(context, "_invocation_context"):
+    #             inv_ctx = context._invocation_context
+    #             logger.debug(f"InvocationContext Type: {type(inv_ctx)}")
+    #             logger.debug(f"InvocationContext Dir: {dir(inv_ctx)}")
+    #             if hasattr(inv_ctx, "state"):
+    #                 logger.debug(f"inv_ctx.state Value: {getattr(inv_ctx, 'state')}")
+ 
+    # except Exception as parse_e:
+    #     logger.error(f"Error in fallback authorization logs: {parse_e}", exc_info=True)
+    # 
+    # return headers
+
+def create_mcp_toolset(region, auth_scheme=None, auth_credential=None) -> McpToolset:
     # Matching working example pattern: https://chronicle.{region}.rep.googleapis.com/mcp
     secops_mcp_url = f"https://chronicle.{region}.rep.googleapis.com/mcp"
     
@@ -49,20 +104,43 @@ def create_mcp_toolset(region) -> McpToolset:
     return McpToolset(
         connection_params=StreamableHTTPConnectionParams(url=secops_mcp_url),
         header_provider=get_secops_headers,
-        errlog=None # explicitly None to prevent sys.stderr capturing (which cannot be pickled)
+        errlog=None, # explicitly None to prevent sys.stderr capturing (which cannot be pickled)
+        auth_scheme=auth_scheme,
+        auth_credential=auth_credential
     )
 
-def create_agent():
-    load_dotenv()
+def get_current_datetime() -> str:
+    """Get the current date and time in ISO 8601 format and epoch seconds.
     
-    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
+    Use this tool when you need to provide a timestamp for tool calls or when
+    answering questions about time (e.g., 'past 24 hours').
+    
+    Returns:
+        A JSON string containing:
+        - iso: The current date and time in ISO 8601 format (e.g., YYYY-MM-DDTHH:MM:SSZ)
+        - epoch: The current date and time as Unix epoch seconds (integer)
+    """
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    return f'{{"iso": "{now.strftime("%Y-%m-%dT%H:%M:%SZ")}", "epoch": {int(now.timestamp())}}}'
+
+
+def create_agent():
+    logger.debug("create_agent() entry")
+    if not os.environ.get("RUNNING_IN_CLOUD"):
+        load_dotenv()
+    
+    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT_ID")
     if not project_id and os.environ.get("REASONING_ENGINE_DEPLOYMENT") != "True":
         try:
             _, project_id = google.auth.default()
         except Exception:
             pass
 
-    os.environ["GOOGLE_CLOUD_PROJECT"] = project_id or ""
+    if not project_id:
+        raise ValueError("GOOGLE_CLOUD_PROJECT environment variable is missing and could not be auto-discovered.")
+
+    os.environ["GOOGLE_CLOUD_PROJECT"] = project_id
     os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
     os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
 
@@ -74,12 +152,19 @@ def create_agent():
 
     region = os.environ.get("CHRONICLE_REGION", "us")
     customer_id = os.environ.get("CHRONICLE_CUSTOMER_ID")
+    if not customer_id:
+        raise ValueError("CHRONICLE_CUSTOMER_ID is missing from environment! The agent will not know which customer to query.")
+        
     chronicle_project_id = os.environ.get("CHRONICLE_PROJECT_ID")
     gemini_auth_id = os.environ.get("GEMINI_AUTHORIZATION_ID")
+    if not gemini_auth_id:
+        raise ValueError("GEMINI_AUTHORIZATION_ID is missing from environment! OneMCP tool calls will fail without an authorization ID.")
 
-    secops_toolset = create_mcp_toolset(region)
+    logger.debug("Defining MCP connection params and toolset...")
+    secops_toolset = create_mcp_toolset(region) # No internal OAuth
+    logger.debug("MCP toolset defined.")
 
-    return Agent(
+    agent_obj = Agent(
         name="secops_agent",
         model=Gemini(
             model="gemini-2.5-pro",
@@ -96,5 +181,7 @@ Current Tenant Information:
 
 When calling tools, ensure you use these identifiers if the tool requires them.
 """,
-        tools=[secops_toolset],
+        tools=[secops_toolset, FunctionTool(func=get_current_datetime)],
     )
+    logger.debug("Agent object created.")
+    return agent_obj

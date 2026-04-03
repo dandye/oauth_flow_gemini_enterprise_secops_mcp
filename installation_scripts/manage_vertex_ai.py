@@ -35,6 +35,7 @@ class VertexAIManager:
         "storage.googleapis.com",
         "cloudbuild.googleapis.com",
         "compute.googleapis.com",
+        "telemetry.googleapis.com",
     ]
 
     # Optional APIs depending on features used
@@ -48,7 +49,8 @@ class VertexAIManager:
     # Required IAM roles
     REQUIRED_ROLES = [
         "roles/aiplatform.user",
-        "roles/storage.admin",  # why?
+        "roles/storage.admin",  # for staging the pickle and tarball
+        "roles/mcp.toolUser",
     ]
 
     def __init__(self, env_file: Path):

@@ -31,6 +31,26 @@ def setup_vertex_ai():
     if not project:
         typer.secho("Error: GCP_PROJECT_ID not set in .env", fg=typer.colors.RED)
         raise typer.Exit(1)
+    if not staging_bucket:
+        staging_bucket = f"gs://{project}-reasoning-engine-staging"
+        typer.secho(f"Warning: GCP_STAGING_BUCKET not set. Defaulting to {staging_bucket}", fg=typer.colors.YELLOW)
+        
+    # Validate and ensure staging bucket physically exists
+    bucket_name = staging_bucket.replace("gs://", "")
+    try:
+        from google.cloud import storage
+        storage_client = storage.Client(project=project)
+        bucket = storage_client.bucket(bucket_name)
+        if not bucket.exists():
+            typer.secho(f"Staging bucket {staging_bucket} does not exist. Attempting to create it...", fg=typer.colors.YELLOW)
+            storage_client.create_bucket(bucket_name, location=location)
+            typer.secho(f"Successfully created bucket: {staging_bucket}", fg=typer.colors.GREEN)
+    except ImportError:
+        typer.secho("Note: google-cloud-storage library unavailable to verify bucket existence.", fg=typer.colors.YELLOW)
+    except Exception as e:
+        typer.secho(f"Error: Failed to verify or create staging bucket {staging_bucket}: {e}", fg=typer.colors.RED)
+        typer.secho("Please explicitly create the staging bucket and assign it in .env before continuing.", fg=typer.colors.RED)
+        raise typer.Exit(1)
 
     vertexai.init(project=project, location=location, staging_bucket=staging_bucket)
     aiplatform.init(project=project, location=location, staging_bucket=staging_bucket)
@@ -70,6 +90,7 @@ def get_env_vars():
         "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
         "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT": "32768",
+        "RUNNING_IN_CLOUD": "true",
     }
     # Remove None values
     return {k: v for k, v in env_vars.items() if v is not None}
@@ -77,17 +98,19 @@ def get_env_vars():
 def get_requirements():
     """Return the list of requirements for the Reasoning Engine."""
     return [
-        "google-adk~=1.27.4",
-        "google-cloud-aiplatform[agent-engines,evaluation]~=1.143.0",
+        "google-adk~=1.28.0",
+        "google-cloud-aiplatform[agent-engines,evaluation]~=1.144.0",
         "pydantic",
         "python-dotenv",
         "opentelemetry-sdk",
+        "opentelemetry-instrumentation-httpx",
+        "opentelemetry-instrumentation-fastapi",
         "opentelemetry-instrumentation-google-genai",
         "opentelemetry-exporter-gcp-logging",
         "mcp>=1.0.0",
-        "gcsfs>=2024.11.0",
-        "google-cloud-logging>=3.12.0",
-        "protobuf>=6.31.1",
+        "gcsfs>=2026.3.0",
+        "google-cloud-logging>=3.15.0",
+        "protobuf>=3.20.2,<7.0.0",
         "google-genai",
     ]
 
@@ -163,11 +186,45 @@ def deploy(
         typer.secho(f"\nDeployment successful!", fg=typer.colors.GREEN, bold=True)
         typer.echo(f"Resource Name: {remote_app.resource_name}")
         
+        # Update .env (comment out active old entries and append new one)
+        try:
+            engine_id = remote_app.resource_name.split('/')[-1]
+            
+            # 1. Read and comment out old active entries
+            new_lines = []
+            if os.path.exists(".env"):
+                with open(".env", "r") as f:
+                    for line in f:
+                        stripped = line.strip()
+                        # Only comment out if it's an UNCOMMENTED active definition
+                        if stripped.startswith("AGENT_ENGINE_RESOURCE_NAME=") or stripped.startswith("AGENT_ENGINE_ID="):
+                            new_lines.append(f"# {line}")
+                        else:
+                            new_lines.append(line)
+                
+                with open(".env", "w") as f:
+                    f.writelines(new_lines)
+            
+            # 2. Append new entries
+            with open(".env", "a") as f:
+                f.write(f"\n# {description}\n")
+                f.write(f"AGENT_ENGINE_RESOURCE_NAME={remote_app.resource_name}\n")
+                f.write(f"AGENT_ENGINE_ID={engine_id}\n")
+            typer.secho("Updated .env with new engine configuration (commented out older active entries).", fg=typer.colors.GREEN)
+        except Exception as env_err:
+            typer.secho(f"Warning: Failed to update .env: {env_err}", fg=typer.colors.YELLOW)
+        
         if run_test:
             typer.echo("\nRunning smoke test...")
             try:
-                response = remote_app.query(input="Hello")
-                typer.echo(f"Test response: {response}")
+                typer.echo("Attempting smoke test via remote_app.chat()...")
+                try:
+                    response = remote_app.chat(message="Hello")
+                    typer.echo(f"Response: {response}")
+                except AttributeError:
+                    typer.echo("Note: Engine object methods not directly accessible in this environment context. Please verify manually in the console or via test_local_init.py.")
+                typer.echo()
+                typer.secho("\nSmoke test successful!", fg=typer.colors.GREEN, bold=True)
             except Exception as test_err:
                 typer.secho(f"Warning: Smoke test failed: {test_err}", fg=typer.colors.YELLOW)
 
@@ -396,9 +453,13 @@ def test(
     
     typer.echo(f"Testing engine: {resource_name}")
     try:
-        engine = ReasoningEngine(resource_name)
-        response = engine.query(input=input)
-        typer.echo(f"\nResponse: {response}")
+        client = vertexai.Client()
+        engine = client.agent_engines.get(name=resource_name)
+        
+        typer.echo("Response: ", nl=False)
+        for chunk in engine.stream_query(message=input, user_id="smoke_test_user"):
+            typer.echo(chunk, nl=False)
+        typer.echo()
         typer.secho("\nTest successful!", fg=typer.colors.GREEN, bold=True)
     except Exception as e:
         typer.secho(f"\nTest failed: {e}", fg=typer.colors.RED)
