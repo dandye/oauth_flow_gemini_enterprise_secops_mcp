@@ -62,7 +62,7 @@ def create_mcp_toolset(region, auth_scheme=None, auth_credential=None) -> McpToo
         auth_credential=auth_credential
     )
 
-async def get_current_datetime() -> str:
+def get_current_datetime() -> str:
     """Get the current date and time in ISO 8601 format and epoch seconds.
     
     Use this tool when you need to provide a timestamp for tool calls or when
@@ -83,7 +83,7 @@ def create_agent():
     if not os.environ.get("RUNNING_IN_CLOUD"):
         load_dotenv()
     
-    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
+    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT_ID")
     if not project_id and os.environ.get("REASONING_ENGINE_DEPLOYMENT") != "True":
         try:
             _, project_id = google.auth.default()
