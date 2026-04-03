@@ -35,6 +35,7 @@ class VertexAIManager:
         "storage.googleapis.com",
         "cloudbuild.googleapis.com",
         "compute.googleapis.com",
+        "telemetry.googleapis.com",
     ]
 
     # Optional APIs depending on features used
