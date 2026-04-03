@@ -1,10 +1,10 @@
-# 📖 `ReadMe_Makefile.md`: Frictionless Makefile targets
+# ReadMe_Makefile.md: Frictionless Makefile targets
 
 To provide a cold-start single command for deployers, we created standardized frictionless targets that automate the end-to-end setup in a single terminal session without manual copy-pasting into the Cloud Console URI.
 
 ---
 
-## 🚀 The Frictionless Targets
+## The Frictionless Targets
 
 ### 1. Unified Wizard Single Command Target
 
@@ -30,7 +30,7 @@ make unified-wizard-workflow OAUTH_SECRETS_FILE=~/.ssh/client_secret.json
 
 ***
 
-## ⚙️ How It Works (Python `.expanduser()`)
+## How It Works (Python .expanduser())
 
 To allow standard local workspace tips (e.g. `~/.ssh/client_secret.json`), we added natively tilde expansion inside our python validating scripts:
 
@@ -42,5 +42,5 @@ This prevents crashes where `.env` loaders otherwise parse literal tilde as inva
 
 ---
 
-## 🛠 Usage Flow Tip:
+## Usage Flow Tip:
 Run `make help` inside your terminal to display the live list of targets alongside their descriptions!
