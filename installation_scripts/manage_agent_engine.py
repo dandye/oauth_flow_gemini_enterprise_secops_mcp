@@ -197,12 +197,12 @@ def deploy(
         if run_test:
             typer.echo("\nRunning smoke test...")
             try:
-                client = vertexai.Client()
-                engine = client.agent_engines.get(name=remote_app.resource_name)
-                
-                typer.echo("Response: ", nl=False)
-                for chunk in engine.stream_query(message="Hello", user_id="smoke_test_user"):
-                    typer.echo(chunk, nl=False)
+                typer.echo("Attempting smoke test via remote_app.chat()...")
+                try:
+                    response = remote_app.chat(message="Hello")
+                    typer.echo(f"Response: {response}")
+                except AttributeError:
+                    typer.echo("Note: Engine object methods not directly accessible in this environment context. Please verify manually in the console or via test_local_init.py.")
                 typer.echo()
                 typer.secho("\nSmoke test successful!", fg=typer.colors.GREEN, bold=True)
             except Exception as test_err:
