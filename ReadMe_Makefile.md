@@ -4,6 +4,19 @@ To provide a cold-start single command for deployers, we created standardized fr
 
 ---
 
+## Prerequisites
+
+Before running standard frictionless targets, you must have your OAuth 2.0 Web Application client secret JSON from standard Google Cloud Console.
+
+For detailed instructions on how to:
+1.  Enable required APIs
+2.  Create an OAuth Client ID (Web Application type)
+3.  Add the Redirect URI (`https://vertexaisearch.cloud.google.com/oauth-redirect`)
+
+[View Detailed Prerequisite Guide here](file:///Users/dandye/Projects/adk_onemcp_auth__worktrees/adk_oauth_auth_credential_v0001/ReadMe.md#3-generate-gcp-client-secret)
+
+---
+
 ## The Frictionless Targets
 
 ### 1. Unified Wizard Single Command Target
