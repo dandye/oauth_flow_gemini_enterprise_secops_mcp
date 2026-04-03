@@ -18,20 +18,22 @@ For detailed instructions on how to:
 
 ---
 
-## Step 0: Fresh Checkout Setup
+## Fresh Checkout Setup
 
 If this is your first time checking out standard repo, running standard chained sequence immediately will deploy using template placeholders and fail.
 
 **How to start cold:**
 
 1.  **Prep Environment:** Run `make setup` to create your local `.env` and `venv`.
-2.  **Edit Configuration:** Open `.env` manually and fill standard IDs:
-    ```bash
-    GCP_PROJECT_ID=secops-demo-env
-    CHRONICLE_PROJECT_ID=a13f6726-efed-452e-9008-8fe0d3cb0f75
-    # ... and keep local secrets separate!
-    ```
-3.  **Discover Secrets:** Proceed to Prerequisite Discovery below and pass standard file path CLI style!
+2.  **Edit Configuration:** Open `.env` manually and fill standard Variable Keys only:
+    *   `GCP_PROJECT_ID`
+    *   `GCP_PROJECT_NUMBER`
+    *   `GCP_LOCATION`
+    *   `GCP_STAGING_BUCKET`
+    *   `CHRONICLE_PROJECT_ID`
+    *   `CHRONICLE_CUSTOMER_ID`
+    *   `CHRONICLE_LOCATION`
+3.  **Secrets:** Proceed to Prerequisite Discovery below and pass standard file path CLI style!
 
 ---
 
