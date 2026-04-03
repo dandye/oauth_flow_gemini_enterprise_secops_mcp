@@ -109,6 +109,9 @@ class OAuthManager:
         Returns:
             Tuple of (authorization_url, client_id, client_secret)
         """
+        # Expand tildes to home directory if present
+        client_secret_file = client_secret_file.expanduser()
+
         if not client_secret_file.exists():
             typer.echo(
                 f"Error: Client secret file not found: {client_secret_file}", err=True
