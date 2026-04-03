@@ -12,8 +12,26 @@ For detailed instructions on how to:
 1.  Enable required APIs
 2.  Create an OAuth Client ID (Web Application type)
 3.  Add the Redirect URI (`https://vertexaisearch.cloud.google.com/oauth-redirect`)
+4. Save the file locall, for example to: `~/.ssh/client_secret.json`
 
 [View Detailed Prerequisite Guide here](file:///Users/dandye/Projects/adk_onemcp_auth__worktrees/adk_oauth_auth_credential_v0001/ReadMe.md#3-generate-gcp-client-secret)
+
+---
+
+## Step 0: Fresh Checkout Setup
+
+If this is your first time checking out standard repo, running standard chained sequence immediately will deploy using template placeholders and fail.
+
+**How to start cold:**
+
+1.  **Prep Environment:** Run `make setup` to create your local `.env` and `venv`.
+2.  **Edit Configuration:** Open `.env` manually and fill standard IDs:
+    ```bash
+    GCP_PROJECT_ID=secops-demo-env
+    CHRONICLE_PROJECT_ID=a13f6726-efed-452e-9008-8fe0d3cb0f75
+    # ... and keep local secrets separate!
+    ```
+3.  **Discover Secrets:** Proceed to Prerequisite Discovery below and pass standard file path CLI style!
 
 ---
 
