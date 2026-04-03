@@ -549,8 +549,10 @@ redeploy-all: agent-engine-deploy agentspace-update ## Redeploy agent engine and
 oauth-workflow: oauth-create-auth oauth-verify ## Complete OAuth setup (create auth and verify)
 	@echo "OAuth authorization setup completed successfully!"
 
-full-deploy-with-oauth: setup agent-engine-deploy oauth-workflow agentspace-link-agent ## Deploy agent with OAuth and link to AgentSpace
-	@echo "Full deployment with OAuth completed successfully!"
+full-deploy-with-oauth: setup agent-engine-deploy oauth-setup agentspace-unified-register ## Frictionless End-to-End single command deployment (use: OAUTH_SECRETS_FILE=path/to/client_secret.json)
+	@echo "========================================"
+	@echo "✨ Ultimate Full Deployment with secrets Successful!"
+	@echo "========================================"
 
 status: agentspace-verify ## Check status of AgentSpace registration
 	@echo "Status check completed!"
