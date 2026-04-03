@@ -49,7 +49,8 @@ class VertexAIManager:
     # Required IAM roles
     REQUIRED_ROLES = [
         "roles/aiplatform.user",
-        "roles/storage.admin",  # why?
+        "roles/storage.admin",  # for staging the pickle and tarball
+        "roles/mcp.toolUser",
     ]
 
     def __init__(self, env_file: Path):
