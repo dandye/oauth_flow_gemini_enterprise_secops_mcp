@@ -33,7 +33,7 @@ If this is your first time checking out standard repo, running standard chained 
     *   `CHRONICLE_PROJECT_ID`
     *   `CHRONICLE_CUSTOMER_ID`
     *   `CHRONICLE_LOCATION`
-3.  **Secrets:** Proceed to Prerequisite Discovery below and pass standard file path CLI style!
+3.  **Secrets:** Proceed to Prerequisite Discovery below and pass standard file path CLI style.
 
 ---
 
