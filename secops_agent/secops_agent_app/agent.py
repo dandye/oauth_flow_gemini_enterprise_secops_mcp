@@ -38,11 +38,57 @@ def get_secops_headers(context) -> dict[str, str]:
     }
 
     try:
-        # Safely resolve items from state (falling back to empty list if no items method is present)
-        for _, val in getattr(getattr(context, "state", {}), "items", lambda: [])():
-            if isinstance(val, str) and val.startswith("ya29."):
-                headers["Authorization"] = f"Bearer {val}"
-                break
+        logger.debug(f"Context Type: {type(context)}")
+        
+        if hasattr(context, "state"):
+            logger.debug(f"context.state Type: {type(context.state)}")
+            logger.debug(f"context.state Value: {context.state}")
+            
+            # Case 1: Mapping (Dict, mappingproxy, etc.)
+            if hasattr(context.state, "items"):
+                for key, val in context.state.items():
+                    if isinstance(val, str) and val.startswith("ya29."):
+                        logger.debug(f"Found token in context.state (items) with key '{key}'")
+                        headers["Authorization"] = f"Bearer {val}"
+                        break
+            
+            # Case 2: String
+            elif isinstance(context.state, str):
+                logger.debug("context.state is a string. Checking for 'ya29.'")
+                if "ya29." in context.state:
+                    logger.debug("Found 'ya29.' in state string!")
+                    try:
+                        import json
+                        # Try to parse as JSON if it looks like it
+                        if context.state.strip().startswith("{"):
+                            state_dict = json.loads(context.state)
+                            for key, val in state_dict.items():
+                                if isinstance(val, str) and val.startswith("ya29."):
+                                    logger.debug(f"Found token in context.state (parsed JSON) with key '{key}'")
+                                    headers["Authorization"] = f"Bearer {val}"
+                                    break
+                    except Exception as parse_e:
+                        logger.warning(f"Failed to parse state string as JSON: {parse_e}")
+                    
+                    # Fallback Regex if not parsed or not found in keys
+                    if "Authorization" not in headers:
+                        import re
+                        match = re.search(r'(ya29\.[a-zA-Z0-9_\-]+)', context.state)
+                        if match:
+                            token = match.group(1)
+                            logger.debug("Extracted token from state string using regex")
+                            headers["Authorization"] = f"Bearer {token}"
+
+        # If still not found, dump dir(context) and check _invocation_context
+        if "Authorization" not in headers:
+            logger.debug(f"Context Dir: {dir(context)}")
+            if hasattr(context, "_invocation_context"):
+                inv_ctx = context._invocation_context
+                logger.debug(f"InvocationContext Type: {type(inv_ctx)}")
+                logger.debug(f"InvocationContext Dir: {dir(inv_ctx)}")
+                if hasattr(inv_ctx, "state"):
+                    logger.debug(f"inv_ctx.state Value: {getattr(inv_ctx, 'state')}")
+
     except Exception as e:
         logger.error(f"Error in get_secops_headers: {e}", exc_info=True)
     
