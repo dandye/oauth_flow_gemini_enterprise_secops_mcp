@@ -1858,5 +1858,71 @@ def delete_app(
         raise typer.Exit(code=1)
 
 
+@app.command()
+def unified_register(
+    env_file: Annotated[
+        Path, typer.Option(help="Path to the environment file.")
+    ] = Path(".env"),
+) -> None:
+    """
+    Combined Wizard: Create OAuth Authorization and Register Agent in AgentSpace.
+
+    This command combines `make oauth-create-auth` and `make agentspace-register` into
+    a single frictionless terminal wizard without manual copy-pasting.
+
+    Examples:
+        python manage.py agentspace unified-register
+    """
+    manager = AgentSpaceManager(env_file)
+
+    # Check if OAuth configuration is available
+    if not manager.env_vars.get("OAUTH_SECRETS_FILE"):
+        typer.secho(
+            " Error: OAUTH_SECRETS_FILE not found in environment.", fg=typer.colors.RED
+        )
+        typer.echo("Please complete SecOps OAuth setup first!")
+        raise typer.Exit(code=1)
+
+    # Dynamically import OAuthManager to avoid circular imports (if any)
+    from installation_scripts.manage_oauth import OAuthManager
+
+    oauth_manager = OAuthManager(env_file)
+
+    # Get values from .env
+    client_id = oauth_manager.env_vars.get("OAUTH_CLIENT_ID")
+    client_secret = oauth_manager.env_vars.get("OAUTH_CLIENT_SECRET")
+    auth_uri = oauth_manager.env_vars.get("OAUTH_AUTH_URI")
+
+    if not all([client_id, client_secret, auth_uri]):
+        typer.secho(
+            " Error: OAuth credentials (Client ID, Secret, URI) not found in .env.",
+            fg=typer.colors.RED,
+        )
+        typer.echo("Please complete SecOps OAuth setup to populate them first!")
+        raise typer.Exit(code=1)
+
+    # Use existing OAUTH_AUTH_ID or generate a new one
+    import uuid
+
+    auth_id = oauth_manager.env_vars.get("OAUTH_AUTH_ID") or f"auth-{uuid.uuid4().hex[:8]}"
+    
+    typer.echo(f"Creating OAuth Authorization '{auth_id}'...")
+
+    # 1. Create Authorization
+    if oauth_manager.create_authorization(auth_id, client_id, client_secret, auth_uri):
+        typer.echo("\nOAuth Authorization created successfully. Now linking Agent in AgentSpace...")
+        
+        # 2. Register Agent sequentially
+        if manager.register_agent(force=True):
+            typer.secho("\n✨ Wizard Link Successful!", fg=typer.colors.GREEN, bold=True)
+            return
+        else:
+            typer.secho("\n❌ Failed to Register Agent in AgentSpace", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+    else:
+        typer.secho("\n❌ Failed to Create OAuth Authorization", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+
 if __name__ == "__main__":
     app()
