@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 from typing import Annotated, Any
+from urllib.parse import urlparse, parse_qs
 
 import google.auth
 import google_auth_oauthlib.flow
@@ -131,22 +132,21 @@ class OAuthManager:
         else:
             typer.echo("Error: Invalid client secret file format", err=True)
             raise typer.Exit(1)
-
         # Create OAuth flow
         flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
             str(client_secret_file), scopes=scopes
         )
-
         flow.redirect_uri = redirect_uri
-
         # Generate authorization URL
         authorization_url, state = flow.authorization_url(
             access_type="offline", include_granted_scopes="true", prompt="consent"
+            # NOTE: could handle pkce here if we knew in advance if it was needed
         )
-        
-        if pkce:
-            authorization_url += "&pkceVerificationEnabled=true"
-
+        # Add PKCE query string param if needed
+        parsed_url = urlparse(authorization_url)
+        params = parse_qs(parsed_url.query)
+        if "code_challenge" in params:
+            authorization_url += "&pkceVerificationEnabled=true" # ToDo: use dict instead of string mutate
         return authorization_url, client_id, client_secret
 
     def create_authorization(
@@ -303,8 +303,8 @@ class OAuthManager:
 @app.command()
 def setup(
     client_secret_file: Annotated[
-        Path, typer.Argument(help="Path to OAuth client secret JSON file")
-    ],
+        Path | None, typer.Argument(help="Path to OAuth client secret JSON file")
+    ] = None,
     pkce: Annotated[
         bool, typer.Option("--pkce", help="Enable PKCE query string parameter")
     ] = False,
@@ -321,6 +321,15 @@ def setup(
     3. Display the authorization URI for user to complete OAuth flow
     """
     manager = OAuthManager(env_file)
+
+    # Fall back to OAUTH_SECRETS_FILE environment variable if missing
+    if not client_secret_file:
+        env_secret = manager.env_vars.get("OAUTH_SECRETS_FILE")
+        if env_secret:
+            client_secret_file = Path(env_secret)
+        else:
+            client_secret_file = Path("client_secret.json")
+            typer.echo(f"Warning: OAUTH_SECRETS_FILE not found in environment. Defaulting to {client_secret_file}")
 
     scopes_list = [
         "https://www.googleapis.com/auth/chronicle",
