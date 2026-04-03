@@ -188,6 +188,11 @@ agentspace-register: check-integration ## Register agent with AgentSpace (use FO
 agentspace-unified-register: check-prereqs ## Unified Wizard: Create OAuth and immediately Link Agent in AgentSpace
 	@$(PYTHON) $(MANAGE_AGENTSPACE) unified-register --env-file $(ENV_FILE)
 
+unified-wizard-workflow: oauth-setup agentspace-unified-register ## Interactive setup + auto registration sequential wizard (use: OAUTH_SECRETS_FILE=path/to/client_secret.json [PKCE=1])
+	@echo "========================================"
+	@echo "✨ Wizard Multi-Step Flow Completed Successfully!"
+	@echo "========================================"
+
 agentspace-update: check-integration ## Update existing AgentSpace agent configuration
 	$(PYTHON) $(MANAGE_AGENTSPACE) update --env-file $(ENV_FILE)
 
