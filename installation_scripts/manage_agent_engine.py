@@ -31,6 +31,26 @@ def setup_vertex_ai():
     if not project:
         typer.secho("Error: GCP_PROJECT_ID not set in .env", fg=typer.colors.RED)
         raise typer.Exit(1)
+    if not staging_bucket:
+        staging_bucket = f"gs://{project}-reasoning-engine-staging"
+        typer.secho(f"Warning: GCP_STAGING_BUCKET not set. Defaulting to {staging_bucket}", fg=typer.colors.YELLOW)
+        
+    # Validate and ensure staging bucket physically exists
+    bucket_name = staging_bucket.replace("gs://", "")
+    try:
+        from google.cloud import storage
+        storage_client = storage.Client(project=project)
+        bucket = storage_client.bucket(bucket_name)
+        if not bucket.exists():
+            typer.secho(f"Staging bucket {staging_bucket} does not exist. Attempting to create it...", fg=typer.colors.YELLOW)
+            storage_client.create_bucket(bucket_name, location=location)
+            typer.secho(f"Successfully created bucket: {staging_bucket}", fg=typer.colors.GREEN)
+    except ImportError:
+        typer.secho("Note: google-cloud-storage library unavailable to verify bucket existence.", fg=typer.colors.YELLOW)
+    except Exception as e:
+        typer.secho(f"Error: Failed to verify or create staging bucket {staging_bucket}: {e}", fg=typer.colors.RED)
+        typer.secho("Please explicitly create the staging bucket and assign it in .env before continuing.", fg=typer.colors.RED)
+        raise typer.Exit(1)
 
     vertexai.init(project=project, location=location, staging_bucket=staging_bucket)
     aiplatform.init(project=project, location=location, staging_bucket=staging_bucket)
