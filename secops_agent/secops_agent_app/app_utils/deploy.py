@@ -264,6 +264,11 @@ def setup_agent_identity(client: Any, project: str, display_name: str) -> Any:
     default=False,
     help="Enable agent identity for per-agent IAM access control (Preview feature)",
 )
+@click.option(
+    "--staging-bucket",
+    default=None,
+    help="GCS bucket for staging files",
+)
 def deploy_agent_engine_app(
     project: str | None,
     location: str,
@@ -284,6 +289,7 @@ def deploy_agent_engine_app(
     container_concurrency: int,
     num_workers: int,
     agent_identity: bool,
+    staging_bucket: str | None,
 ) -> AgentEngine:
     """Deploy the agent engine app to Vertex AI."""
 
@@ -342,6 +348,10 @@ def deploy_agent_engine_app(
 
     source_packages_list = list(source_packages)
 
+    if not staging_bucket:
+        import os
+        staging_bucket = os.environ.get("GCP_STAGING_BUCKET")
+
     # Initialize vertexai client
     # Use v1beta1 API when agent identity is enabled (required for identity_type)
     http_options = {"api_version": "v1beta1"} if agent_identity else None
@@ -349,8 +359,9 @@ def deploy_agent_engine_app(
         project=project,
         location=location,
         http_options=http_options,
+        staging_bucket=staging_bucket,
     )
-    vertexai.init(project=project, location=location)
+    vertexai.init(project=project, location=location, staging_bucket=staging_bucket)
 
     # Add agent garden labels if configured
 

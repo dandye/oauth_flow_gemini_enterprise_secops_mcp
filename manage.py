@@ -3,7 +3,7 @@ Unified CLI for Agentic SOC Gemini Enterprise Management
 
 This script provides a unified interface to manage all components of the
 Agentic SOC Gemini Enterprise system including agent engines, Gemini Enterprise apps,
-OAuth authorizations, data stores, and RAG corpora.
+OAuth authorizations, and IAM permissions.
 """
 
 import sys
@@ -32,12 +32,11 @@ def get_app(module_name: str):
 agent_engine_app = get_app("manage_agent_engine")
 Gemini_Enterprise_app = get_app("manage_agentspace")
 oauth_app = get_app("manage_oauth")
-datastore_app = get_app("manage_datastore")
-rag_app = get_app("manage_rag")
-memories_app = get_app("manage_memories")
 iam_app = get_app("manage_iam")
 vertex_app = get_app("manage_vertex_ai")
-chatops_app = get_app("manage_chat_ops")
+gcs_app = get_app("manage_gcs")
+secret_app = get_app("upload_secret")
+env_app = get_app("env_validation")
 
 console = Console()
 
@@ -61,22 +60,18 @@ if Gemini_Enterprise_app:
     )
 if oauth_app:
     app.add_typer(oauth_app, name="oauth", help="Manage OAuth authorizations")
-if datastore_app:
-    app.add_typer(datastore_app, name="datastore", help="Manage data stores")
-if rag_app:
-    app.add_typer(rag_app, name="rag", help="Manage RAG corpora")
-if memories_app:
-    app.add_typer(memories_app, name="memories", help="Manage Agent Engine memories")
 if iam_app:
     app.add_typer(
         iam_app, name="iam", help="Manage IAM permissions for service accounts"
     )
 if vertex_app:
     app.add_typer(vertex_app, name="vertex", help="Verify and manage Vertex AI setup")
-if chatops_app:
-    app.add_typer(
-        chatops_app, name="chatops", help="Manage and test ChatOps cards and functions"
-    )
+if gcs_app:
+    app.add_typer(gcs_app, name="gcs", help="Manage Google Cloud Storage buckets")
+if secret_app:
+    app.add_typer(secret_app, name="secret", help="Manage Secret Manager uploads")
+if env_app:
+    app.add_typer(env_app, name="env", help="Validate environment configuration")
 
 
 # Workflow subcommand group
@@ -218,8 +213,7 @@ def status(
     - Agent Engine deployment
     - AgentSpace registration
     - OAuth configuration
-    - Data stores
-    - RAG corpora
+    - IAM permissions
     """
     console.print("\n[bold blue]System Status Check[/bold blue]\n")
 
@@ -237,7 +231,6 @@ def status(
         "AGENTSPACE_APP_ID",
         "AGENTSPACE_AGENT_ID",
         "OAUTH_AUTH_ID",
-        "RAG_CORPUS_ID",
     ]
 
     for var in env_vars_to_check:

@@ -8,7 +8,16 @@ have copied .env.example without updating placeholder values.
 
 import os
 import re
-from typing import NamedTuple
+from pathlib import Path
+from typing import Annotated, NamedTuple, Optional
+
+import typer
+from dotenv import load_dotenv
+
+app = typer.Typer(
+    add_completion=False,
+    help="Validate environment variables in .env file.",
+)
 
 
 class ValidationError(NamedTuple):
@@ -212,3 +221,39 @@ def validate_file_path_exists(var_name: str, file_path: str) -> ValidationError 
         )
 
     return None
+
+
+@app.command()
+def validate(
+    env_file: Annotated[
+        Path, typer.Option("--env-file", "-e", help="Path to environment file")
+    ] = Path(".env"),
+):
+    """
+    Validate environment variables in .env file.
+    """
+    if not env_file.exists():
+        typer.secho(f"Error: Environment file not found: {env_file}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    load_dotenv(env_file, override=True)
+    env_vars = dict(os.environ)
+
+    required_vars = [
+        "GCP_PROJECT_ID",
+        "GCP_PROJECT_NUMBER",
+        "GCP_LOCATION",
+        "GCP_STAGING_BUCKET",
+    ]
+
+    is_valid, errors = validate_env_vars(required_vars, env_vars)
+
+    if is_valid:
+        typer.secho("✓ Environment configuration is valid.", fg=typer.colors.GREEN)
+    else:
+        typer.echo(format_validation_errors(errors))
+        raise typer.Exit(1)
+
+
+if __name__ == "__main__":
+    app()

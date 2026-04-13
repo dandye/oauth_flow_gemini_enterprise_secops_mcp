@@ -179,28 +179,6 @@ class VertexAIManager:
                     elif var == "GCP_LOCATION":
                         self.location = value
 
-        # Check optional RAG location
-        rag_location = self.env_vars.get("RAG_GCP_LOCATION")
-        if rag_location:
-            is_placeholder, reason = is_placeholder_value(
-                "RAG_GCP_LOCATION", rag_location
-            )
-            if is_placeholder:
-                typer.secho(
-                    f"  ✗ RAG_GCP_LOCATION: {rag_location} ({reason})",
-                    fg=typer.colors.RED,
-                )
-                all_valid = False
-            else:
-                typer.secho(
-                    f"  ✓ RAG_GCP_LOCATION: {rag_location}", fg=typer.colors.GREEN
-                )
-        else:
-            typer.secho(
-                "  ℹ RAG_GCP_LOCATION: Not set (will use GCP_LOCATION)",
-                fg=typer.colors.YELLOW,
-            )
-
         return all_valid
 
     def _check_authentication(self) -> bool:
@@ -326,11 +304,11 @@ class VertexAIManager:
     def _check_vertex_ai_init(self) -> bool:
         """Test Vertex AI initialization."""
         try:
-            # Use RAG location if set, otherwise use GCP_LOCATION
-            location = self.env_vars.get("RAG_GCP_LOCATION") or self.location
+            location = self.location
+            staging_bucket = self.env_vars.get("GCP_STAGING_BUCKET")
 
             vertexai.init(
-                project=self.project_id, location=location, credentials=self.credentials
+                project=self.project_id, location=location, credentials=self.credentials, staging_bucket=staging_bucket
             )
             typer.secho("  ✓ Vertex AI initialized successfully", fg=typer.colors.GREEN)
             typer.secho(f"    Project: {self.project_id}", fg=typer.colors.GREEN)
