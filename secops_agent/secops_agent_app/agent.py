@@ -11,8 +11,59 @@ from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumento
 from dotenv import load_dotenv
 import logging
 import sys
+from google.oauth2.credentials import Credentials
+import datetime
+from google.auth.transport.requests import Request
 
-def get_secops_headers(context) -> dict[str, str]:
+class TokenRelay:
+    """Manages in-memory caching of Google OAuth access tokens for Gmail MCP.
+
+    Proactively refreshes access tokens 5 minutes prior to expiration.
+    """
+
+    def __init__(self, credentials):
+        self._creds = credentials
+        self._cached_token: str | None = None
+        self._expiry: datetime.datetime | None = None
+
+    def get_token(self) -> str:
+        """Returns a valid access token, proactively refreshing when needed."""
+        now = datetime.datetime.now()
+        if (
+            self._cached_token is None
+            or self._expiry is None
+            or now >= (self._expiry - datetime.timedelta(minutes=5))
+        ):
+            try:
+                if not self._creds.valid:
+                    self._creds.refresh(Request())
+                self._cached_token = self._creds.token
+                self._expiry = now + datetime.timedelta(minutes=50)
+            except Exception as e:
+                print(f"[TokenRelay] Token refresh failed: {e}")
+        return self._cached_token or ""
+
+
+SCOPES = [
+    "https://www.googleapis.com/auth/cloud-platform",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/gmail.compose",
+    "https://www.googleapis.com/auth/gmail.labels",
+]
+
+
+token_relay = None
+if os.path.exists("token.json"):
+    try:
+        creds = Credentials.from_authorized_user_file("token.json", scopes=SCOPES)
+        token_relay = TokenRelay(creds)
+        logging.info("Initialized TokenRelay from token.json")
+    except Exception as e:
+        logging.warning(f"Failed to initialize TokenRelay from token.json: {e}")
+
+
+def get_secops_headers(context=None) -> dict[str, str]:
     # Read from environment AT RUNTIME
     chronicle_project_id = os.environ.get("CHRONICLE_PROJECT_ID")
     customer_id = os.environ.get("CHRONICLE_CUSTOMER_ID")
@@ -36,7 +87,14 @@ def get_secops_headers(context) -> dict[str, str]:
         if user_token:
             headers["Authorization"] = f"Bearer {user_token}"
             # Log first few chars for debugging without leaking full sensitive token in recap
-            logging.info(f"DEBUG: Tool Call Auth Header present (starts with: {user_token[:10]}...)")
+            logging.info(f"DEBUG: Tool Call Auth Header present from context.state (starts with: {user_token[:10]}...)")
+
+    # Fallback to TokenRelay if no context token was provided
+    if "Authorization" not in headers and token_relay:
+        relay_token = token_relay.get_token()
+        if relay_token:
+             headers["Authorization"] = f"Bearer {relay_token}"
+             logging.info(f"DEBUG: Tool Call Auth Header present from TokenRelay (starts with: {relay_token[:10]}...)")
             
     return headers
 
