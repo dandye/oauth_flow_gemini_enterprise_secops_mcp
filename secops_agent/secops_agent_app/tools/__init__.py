@@ -1,16 +1,14 @@
-"""secops_agent_app package."""
+"""Tools module for SecOps agent."""
 
-from .agent import create_agent
-from .tools import (
-    case_creation_mcp,
+from .case_creation import (
     create_case,
     create_manual_case,
     create_manual_case_soar,
     create_or_update_case,
+    mcp as case_creation_mcp,
 )
 
 __all__ = [
-    "create_agent",
     "create_case",
     "create_manual_case",
     "create_or_update_case",
