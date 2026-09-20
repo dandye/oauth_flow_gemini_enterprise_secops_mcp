@@ -15,7 +15,9 @@ import vertexai
 from google.cloud import aiplatform
 from google.cloud import aiplatform_v1beta1
 from google.protobuf import field_mask_pb2
-from vertexai.preview.reasoning_engines import ReasoningEngine, AdkApp
+from vertexai import agent_engines
+from vertexai.agent_engines import AdkApp
+from vertexai.preview.reasoning_engines import ReasoningEngine
 from dotenv import load_dotenv
 import google.auth.transport._mtls_helper as _mtls_helper
 import logging
@@ -61,7 +63,7 @@ def get_env_vars():
       "CHRONICLE_REGION": os.environ.get("CHRONICLE_REGION"),
       "GEMINI_AUTHORIZATION_ID": os.environ.get("GEMINI_AUTHORIZATION_ID"),
       "OAUTH_AUTH_ID": os.environ.get("OAUTH_AUTH_ID"),
-      "GOOGLE_CLOUD_PROJECT": os.environ.get("GCP_PROJECT_ID"),
+      "GCP_PROJECT_ID": os.environ.get("GCP_PROJECT_ID"),
       "DEBUG": os.environ.get("DEBUG", "False"),
       "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
       "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
@@ -75,7 +77,7 @@ def get_env_vars():
 def get_requirements():
   """Return the list of requirements for the Reasoning Engine."""
   return [
-      "google-adk>=1.27.4,<2.0.0",
+      "google-adk>=2.0.0",
       "google-cloud-aiplatform[agent-engines,evaluation]>=1.130.0",
       "pydantic",
       "python-dotenv",
@@ -110,20 +112,17 @@ def deploy(
     os.environ["DEBUG"] = "True"
     typer.echo("Debug logging enabled")
 
-  typer.echo(f"Deploying agent from module: {agent_module}")
-  agent = load_agent(agent_module)
-
-  # Wrap agent in AdkApp as required by Reasoning Engines
-  # Environment variables are passed here so they are pickled with the app
-  app_instance = AdkApp(agent=agent, env_vars=get_env_vars())
+  typer.echo(f"Deploying ADK 2.x App from module: {agent_module}")
+  app_instance = load_adk_app(agent_module)
 
   try:
-    remote_app = ReasoningEngine.create(
-        reasoning_engine=app_instance,
+    remote_app = agent_engines.create(
+        agent_engine=app_instance,
         display_name=f"SecOps Agent - {agent_module}",
         description=description,
         requirements=get_requirements(),
         extra_packages=["secops_agent"],
+        env_vars=get_env_vars(),
     )
     try:
       # Manually add framework metadata and telemetry env vars since SDK creation is missing support (ref: issue #6267)
@@ -239,21 +238,21 @@ def update(
     )
     raise typer.Exit(1)
 
-  typer.echo(f"Updating agent {resource_name} from module: {agent_module}")
-  agent = load_agent(agent_module)
-
-  # Wrap agent in AdkApp as required by Reasoning Engines
-  # Environment variables are passed here so they are pickled with the app
-  app_instance = AdkApp(agent=agent, env_vars=get_env_vars())
+  typer.echo(
+      f"Updating agent {resource_name} with ADK 2.x App from module:"
+      f" {agent_module}"
+  )
+  app_instance = load_adk_app(agent_module)
 
   try:
-    engine = ReasoningEngine(resource_name)
-    remote_app = engine.update(
-        reasoning_engine=app_instance,
+    remote_app = agent_engines.update(
+        resource_name=resource_name,
+        agent_engine=app_instance,
         display_name=f"SecOps Agent - {agent_module}",
         description=description,
         requirements=get_requirements(),
         extra_packages=["secops_agent"],
+        env_vars=get_env_vars(),
     )
     try:
       # Manually add framework metadata and telemetry env vars since SDK creation is missing support (ref: issue #6267)
@@ -514,7 +513,11 @@ def query_reasoning_engine(engine_or_name, prompt: str) -> str:
     if isinstance(chunk, dict):
       parts = chunk.get("content", {}).get("parts", [])
       for part in parts:
-        if isinstance(part, dict) and part.get("text"):
+        if (
+            isinstance(part, dict)
+            and part.get("text")
+            and not part.get("thought")
+        ):
           texts.append(part["text"])
     else:
       texts.append(str(chunk))
@@ -550,6 +553,42 @@ def warmup():
   setup_vertex_ai()
   typer.echo("Pre-warming agent engine connections...")
   test(input="Warmup query - please initialize tools")
+
+
+def load_adk_app(module_name: str) -> AdkApp:
+  """Import module and return a GA Vertex AI AdkApp wrapping the ADK 2.x App container."""
+  root_path = os.path.abspath(os.getcwd())
+  if root_path not in sys.path:
+    sys.path.insert(0, root_path)
+
+  if (
+      not module_name.startswith("secops_agent.secops_agent_app.")
+      and "." not in module_name
+  ):
+    module_name = f"secops_agent.secops_agent_app.{module_name}"
+
+  os.environ["REASONING_ENGINE_DEPLOYMENT"] = "True"
+
+  try:
+    module = importlib.import_module(module_name)
+    if hasattr(module, "create_app"):
+      return AdkApp(app=module.create_app())
+    if hasattr(module, "create_agent"):
+      return AdkApp(agent=module.create_agent())
+    typer.secho(
+        f"Error: Module '{module_name}' has no create_app() or create_agent()",
+        fg=typer.colors.RED,
+    )
+    raise typer.Exit(1)
+  except Exception as e:
+    typer.secho(
+        f"Error loading ADK 2.x app module '{module_name}': {e}",
+        fg=typer.colors.RED,
+    )
+    import traceback
+
+    traceback.print_exc()
+    raise typer.Exit(1)
 
 
 def load_agent(module_name: str):
