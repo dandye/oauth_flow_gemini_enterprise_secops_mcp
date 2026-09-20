@@ -1,0 +1,65 @@
+set dotenv-load := true
+
+# Default recipe lists available tasks
+default:
+  @just --list
+
+# Install dependencies using uv package manager
+install:
+  uv sync --all-groups
+
+# Launch local dev playground
+playground:
+  @echo "==============================================================================="
+  @echo "| Starting your agent playground...                                           |"
+  @echo "|                                                                             |"
+  @echo "| IMPORTANT: Select the 'secops_agent_app' folder to interact with your agent |"
+  @echo "==============================================================================="
+  uv run adk web . --port 8501 --reload_agents
+
+# Deploy the agent remotely to Vertex AI Agent Engine
+deploy agent_module="agent":
+  uv run oauth-flow-gemini-enterprise-secops-mcp agent-engine deploy --agent-module {{agent_module}}
+
+# Alias for deploy
+backend: deploy
+
+# Run unit and integration tests
+test:
+  uv run pytest tests/unit && uv run pytest tests/integration
+
+# Run agent evaluation using ADK eval
+eval evalset="tests/eval/evalsets/basic.evalset.json" eval_config="tests/eval/eval_config.json":
+  @echo "==============================================================================="
+  @echo "| Running Agent Evaluation                                                    |"
+  @echo "==============================================================================="
+  uv run adk eval ./secops_agent_app {{evalset}} --config_file_path={{eval_config}}
+
+# Run evaluation across all evalsets
+eval-all:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  echo "==============================================================================="
+  echo "| Running All Evalsets                                                        |"
+  echo "==============================================================================="
+  for evalset in tests/eval/evalsets/*.evalset.json; do
+    echo ""
+    echo "[RUN] Running: $evalset"
+    just eval "$evalset"
+  done
+  echo ""
+  echo "[OK] All evalsets completed"
+
+# Format code with Ruff and Pyink
+format:
+  uv run ruff check --fix .
+  uv run pyink .
+
+# Run code quality checks
+lint:
+  uv run ruff check .
+  uv run pyink --check --diff .
+
+# Register the deployed agent to Gemini Enterprise
+register-gemini-enterprise:
+  @uvx agent-starter-pack@0.39.6 register-gemini-enterprise

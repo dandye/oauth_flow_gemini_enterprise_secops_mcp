@@ -1,91 +1,115 @@
+import logging
 import os
-import google.auth
-from google.adk.auth import AuthScheme, AuthCredential, AuthCredentialTypes, OAuth2Auth
+import sys
+from dotenv import load_dotenv
 from google.adk.agents import Agent
+from google.adk.auth import AuthCredential
+from google.adk.auth import AuthCredentialTypes
+from google.adk.auth import AuthScheme
+from google.adk.auth import OAuth2Auth
 from google.adk.models import Gemini
 from google.adk.tools.mcp_tool import McpToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
+import google.auth
+import google.auth.transport.requests
 from google.genai import types
-
 from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumentor
-from dotenv import load_dotenv
-import logging
-import sys
+
+os.environ.setdefault("ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL", "true")
+
 
 def get_secops_headers(context) -> dict[str, str]:
-    # Read from environment AT RUNTIME
-    chronicle_project_id = os.environ.get("CHRONICLE_PROJECT_ID")
-    customer_id = os.environ.get("CHRONICLE_CUSTOMER_ID")
-    gemini_auth_id = os.environ.get("GEMINI_AUTHORIZATION_ID")
-    region = os.environ.get("CHRONICLE_REGION", "us")
+  # Read from environment AT RUNTIME
+  chronicle_project_id = os.environ.get("CHRONICLE_PROJECT_ID")
+  customer_id = os.environ.get("CHRONICLE_CUSTOMER_ID")
+  gemini_auth_id = os.environ.get("GEMINI_AUTHORIZATION_ID")
+  region = os.environ.get("CHRONICLE_REGION", "us")
 
-    headers = {
-        "Accept": "text/event-stream",
-        "Content-Type": "application/json"
-    }
-    
-    # Only add the project header if we actually have a value
-    if chronicle_project_id:
-        headers["x-goog-user-project"] = chronicle_project_id
-    else:
-        # Critical for tool execution, though list_tools might still work
-        logging.critical("CHRONICLE_PROJECT_ID is missing from environment! OneMCP tool calls *will* fail without a routing context.")
+  headers = {"Accept": "text/event-stream", "Content-Type": "application/json"}
 
-    if context and context.state and gemini_auth_id:
-        user_token = context.state.get(gemini_auth_id)
-        if user_token:
-            headers["Authorization"] = f"Bearer {user_token}"
-            # Log first few chars for debugging without leaking full sensitive token in recap
-            logging.info(f"DEBUG: Tool Call Auth Header present (starts with: {user_token[:10]}...)")
-            
-    return headers
-
-def create_mcp_toolset(region) -> McpToolset:
-    # Matching working example pattern: https://chronicle.{region}.rep.googleapis.com/mcp
-    secops_mcp_url = f"https://chronicle.{region}.rep.googleapis.com/mcp"
-    
-    logging.info(f"Initializing MCP Toolset with URL: {secops_mcp_url}")
-    
-    return McpToolset(
-        connection_params=StreamableHTTPConnectionParams(url=secops_mcp_url),
-        header_provider=get_secops_headers,
-        errlog=None # explicitly None to prevent sys.stderr capturing (which cannot be pickled)
+  # Only add the project header if we actually have a value
+  if chronicle_project_id:
+    headers["x-goog-user-project"] = chronicle_project_id
+  else:
+    # Critical for tool execution, though list_tools might still work
+    logging.critical(
+        "CHRONICLE_PROJECT_ID is missing from environment! OneMCP tool calls"
+        " *will* fail without a routing context."
     )
 
+  user_token = None
+  if context and context.state and gemini_auth_id:
+    user_token = context.state.get(gemini_auth_id)
+    if user_token:
+      headers["Authorization"] = f"Bearer {user_token}"
+      # Log first few chars for debugging without leaking full sensitive token in recap
+      logging.info(
+          "DEBUG: Tool Call Auth Header present (starts with: %s...)",
+          user_token[:10],
+      )
+
+  if not user_token:
+    try:
+      creds, _ = google.auth.default(
+          scopes=["https://www.googleapis.com/auth/cloud-platform"]
+      )
+      creds.refresh(google.auth.transport.requests.Request())
+      if creds.token:
+        headers["Authorization"] = f"Bearer {creds.token}"
+    except Exception:
+      pass
+
+  return headers
+
+
+def create_mcp_toolset(region) -> McpToolset:
+  # Matching working example pattern: https://chronicle.{region}.rep.googleapis.com/mcp
+  secops_mcp_url = f"https://chronicle.{region}.rep.googleapis.com/mcp"
+
+  logging.info("Initializing MCP Toolset with URL: %s", secops_mcp_url)
+
+  return McpToolset(
+      connection_params=StreamableHTTPConnectionParams(url=secops_mcp_url),
+      header_provider=get_secops_headers,
+      errlog=None,  # explicitly None to prevent sys.stderr capturing (which cannot be pickled)
+  )
+
+
 def create_agent():
-    load_dotenv()
-    
-    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
-    if not project_id and os.environ.get("REASONING_ENGINE_DEPLOYMENT") != "True":
-        try:
-            _, project_id = google.auth.default()
-        except Exception:
-            pass
+  load_dotenv()
+  os.environ["ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL"] = "true"
 
-    os.environ["GOOGLE_CLOUD_PROJECT"] = project_id or ""
-    os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
-    os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
+  project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
+  if not project_id and os.environ.get("REASONING_ENGINE_DEPLOYMENT") != "True":
+    try:
+      _, project_id = google.auth.default()
+    except Exception:
+      pass
 
-    if os.environ.get("REASONING_ENGINE_DEPLOYMENT") != "True":
-         GoogleGenAiSdkInstrumentor().instrument()
+  os.environ["GOOGLE_CLOUD_PROJECT"] = project_id or ""
+  os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
+  os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
 
-    Agent.version = "1.0"
-    os.environ["GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY"] = "True"
+  if os.environ.get("REASONING_ENGINE_DEPLOYMENT") != "True":
+    GoogleGenAiSdkInstrumentor().instrument()
 
-    region = os.environ.get("CHRONICLE_REGION", "us")
-    customer_id = os.environ.get("CHRONICLE_CUSTOMER_ID")
-    chronicle_project_id = os.environ.get("CHRONICLE_PROJECT_ID")
-    gemini_auth_id = os.environ.get("GEMINI_AUTHORIZATION_ID")
+  Agent.version = "1.0"
+  os.environ["GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY"] = "True"
 
-    secops_toolset = create_mcp_toolset(region)
+  region = os.environ.get("CHRONICLE_REGION", "us")
+  customer_id = os.environ.get("CHRONICLE_CUSTOMER_ID")
+  chronicle_project_id = os.environ.get("CHRONICLE_PROJECT_ID")
+  gemini_auth_id = os.environ.get("GEMINI_AUTHORIZATION_ID")
 
-    return Agent(
-        name="secops_agent",
-        model=Gemini(
-            model="gemini-2.5-pro",
-            retry_options=types.HttpRetryOptions(attempts=3),
-        ),
-        instruction=f"""You are a Google SecOps assistant. 
+  secops_toolset = create_mcp_toolset(region)
+
+  return Agent(
+      name="secops_agent",
+      model=Gemini(
+          model="gemini-2.5-pro",
+          retry_options=types.HttpRetryOptions(attempts=3),
+      ),
+      instruction=f"""You are a Google SecOps assistant. 
 You have access to the remote SecOps MCP server which provides tools for SIEM and SOAR operations.
 Always use the provided tools to fetch information from Chronicle.
 
@@ -96,5 +120,5 @@ Current Tenant Information:
 
 When calling tools, ensure you use these identifiers if the tool requires them.
 """,
-        tools=[secops_toolset],
-    )
+      tools=[secops_toolset],
+  )
