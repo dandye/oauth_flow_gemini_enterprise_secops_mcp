@@ -14,7 +14,7 @@ authors = [
 ]
 dependencies = [
   "gcsfs>=2024.11.0",
-  "google-adk>=1.27.4,<2.0.0",
+  "google-adk>=2.0.0",
   "google-auth-oauthlib>=1.2.0",
   "google-cloud-aiplatform[agent-engines,evaluation]>=1.130.0",
   "google-cloud-logging>=3.12.0",
