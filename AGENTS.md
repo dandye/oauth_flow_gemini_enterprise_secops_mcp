@@ -43,25 +43,31 @@ This repository strictly complies with the **Google Python Style Guide**:
 │   └── workflows/
 │       └── ci.yml        # CI automation (GitHub Actions with setup-uv)
 ├── AGENTS.md             # AI coding instructions and repo guidelines
-├── DESIGN_SPEC.md        # Architecture specification for SecOps MCP OAuth Passthrough
+├── README.md             # Project description and quickstart
 ├── justfile              # Task runner (uv sync, test, lint, format, typecheck, run)
 ├── pyproject.toml        # PEP 621 + Hatchling + PEP 735 dependency groups + Pyink config
 ├── uv.lock               # Deterministic dependency lockfile
 ├── docs/                 # Technical documentation & architecture notes
 │   ├── .gitkeep
+│   ├── DESIGN_SPEC.md    # Architecture specification for SecOps MCP OAuth Passthrough
 │   ├── architecture.md
 │   └── setup.md
+├── external/
+│   └── agent-starter-pack # External reference submodule
 ├── scripts/              # Helper & deployment automation scripts
 │   ├── .gitkeep
 │   └── setup_env.sh
-├── installation_scripts/ # Agent Engine, Gemini Enterprise, OAuth, and IAM CLI modules
 ├── secops_agent/         # ADK Agent package for Vertex AI Reasoning Engine deployment
+│   ├── AGENTS.md
+│   ├── justfile
+│   └── secops_agent_app/
 ├── src/
 │   └── oauth_flow_gemini_enterprise_secops_mcp/
 │       ├── __init__.py
 │       ├── __main__.py   # Module execution entrypoint (python -m oauth_flow_gemini_enterprise_secops_mcp)
 │       ├── cli.py        # Typer + Rich unified CLI (2-space indent, 80 cols)
 │       ├── core.py       # Core package implementation
+│       ├── installation_scripts/ # Agent Engine, Gemini Enterprise, OAuth, and IAM CLI modules
 │       └── py.typed      # PEP 561 marker
 └── tests/
     ├── conftest.py       # Pytest fixtures and mock setup

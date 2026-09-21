@@ -18,14 +18,19 @@ from rich.console import Console
 
 from oauth_flow_gemini_enterprise_secops_mcp.core import run_pipeline
 
-# Resolve repo root (src/oauth_flow_gemini_enterprise_secops_mcp/cli.py -> parents[2])
-REPO_ROOT = Path(__file__).resolve().parents[2]
+# Resolve package and repo roots
+PACKAGE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = PACKAGE_DIR.parents[1]
 
 # Load environment variables
 load_dotenv(REPO_ROOT / ".env")
 
-# Ensure repository root and installation_scripts are importable
-for path_entry in (str(REPO_ROOT), str(REPO_ROOT / "installation_scripts")):
+# Ensure repository root, package root, and installation_scripts are importable
+for path_entry in (
+    str(REPO_ROOT),
+    str(PACKAGE_DIR),
+    str(PACKAGE_DIR / "installation_scripts"),
+):
   if path_entry not in sys.path:
     sys.path.insert(0, path_entry)
 
@@ -40,7 +45,9 @@ def get_app(module_name: str) -> typer.Typer | None:
     Loaded Typer application or None if unavailable.
   """
   try:
-    module = importlib.import_module(f"installation_scripts.{module_name}")
+    module = importlib.import_module(
+        f"oauth_flow_gemini_enterprise_secops_mcp.installation_scripts.{module_name}"
+    )
     return module.app
   except (ImportError, AttributeError):
     return None
@@ -64,6 +71,7 @@ SUBCOMMAND_SPECS = [
     ("manage_agent_engine", "agent-engine", "Manage Agent Engine instances"),
     ("manage_agentspace", "agentspace", "Manage AgentSpace apps and agents"),
     ("manage_oauth", "oauth", "Manage OAuth authorizations"),
+    ("upload_secret", "secret", "Upload and verify Secret Manager credentials"),
     ("manage_datastore", "datastore", "Manage data stores"),
     ("manage_rag", "rag", "Manage RAG corpora"),
     ("manage_memories", "memories", "Manage Agent Engine memories"),
@@ -148,7 +156,9 @@ def full_deploy(
     raise typer.Exit(code=1)
 
   console.print("\n[yellow]Step 2: Create OAuth Authorization[/yellow]")
-  from installation_scripts.manage_oauth import OAuthManager
+  from oauth_flow_gemini_enterprise_secops_mcp.installation_scripts.manage_oauth import (
+      OAuthManager,
+  )
 
   oauth_manager = OAuthManager(env_file)
 
@@ -179,7 +189,9 @@ def full_deploy(
     raise typer.Exit(code=1)
 
   console.print("\n[yellow]Step 3: Link Agent to AgentSpace[/yellow]")
-  from installation_scripts.manage_agentspace import AgentSpaceManager
+  from oauth_flow_gemini_enterprise_secops_mcp.installation_scripts.manage_agentspace import (
+      AgentSpaceManager,
+  )
 
   as_manager = AgentSpaceManager(env_file)
   if as_manager.link_agent_to_agentspace():
@@ -216,7 +228,9 @@ def redeploy_all(
     raise typer.Exit(code=1)
 
   console.print("\n[yellow]Step 2: Update AgentSpace Configuration[/yellow]")
-  from installation_scripts.manage_agentspace import AgentSpaceManager
+  from oauth_flow_gemini_enterprise_secops_mcp.installation_scripts.manage_agentspace import (
+      AgentSpaceManager,
+  )
 
   manager = AgentSpaceManager(env_file)
   if manager.update_agent():
@@ -244,7 +258,9 @@ def status(
   """
   console.print("\n[bold blue]System Status Check[/bold blue]\n")
 
-  from installation_scripts.manage_agentspace import AgentSpaceManager
+  from oauth_flow_gemini_enterprise_secops_mcp.installation_scripts.manage_agentspace import (
+      AgentSpaceManager,
+  )
 
   manager = AgentSpaceManager(env_file)
 

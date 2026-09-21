@@ -54,7 +54,6 @@ oauth-flow-gemini-enterprise-secops-mcp = "oauth_flow_gemini_enterprise_secops_m
 [tool.hatch.build.targets.wheel]
 packages = [
   "src/oauth_flow_gemini_enterprise_secops_mcp",
-  "installation_scripts",
   "secops_agent",
 ]
 
@@ -67,6 +66,7 @@ extend-exclude = "/(external)/"
 
 [tool.pytype]
 inputs = ["src"]
+exclude = ["src/oauth_flow_gemini_enterprise_secops_mcp/installation_scripts"]
 disable = ["import-error"]
 
 [tool.pytest.ini_options]
@@ -89,7 +89,7 @@ exclude = [
   "dist",
   "__pycache__",
   "external",
-  "installation_scripts",
+  "src/oauth_flow_gemini_enterprise_secops_mcp/installation_scripts",
   "secops_agent",
 ]
 

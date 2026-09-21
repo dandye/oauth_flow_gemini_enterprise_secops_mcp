@@ -73,12 +73,80 @@ agent-engine-update agent_module="agent":
   uv run oauth-flow-gemini-enterprise-secops-mcp agent-engine update --agent-module {{ agent_module }}
 
 # Test deployed agent engine
-agent-engine-test:
-  uv run oauth-flow-gemini-enterprise-secops-mcp agent-engine test
+agent-engine-test *args="":
+  uv run oauth-flow-gemini-enterprise-secops-mcp agent-engine test {{ args }}
+
+# Warmup deployed agent engine MCP connections
+agent-engine-warmup:
+  uv run oauth-flow-gemini-enterprise-secops-mcp agent-engine warmup
 
 # List deployed agent engine instances
 agent-engine-list:
   uv run oauth-flow-gemini-enterprise-secops-mcp agent-engine list
+
+# Register agent with Gemini Enterprise (AgentSpace)
+agentspace-register *args="":
+  uv run oauth-flow-gemini-enterprise-secops-mcp agentspace register {{ args }}
+
+# Link deployed agent to Gemini Enterprise (AgentSpace) with OAuth
+agentspace-link-agent:
+  uv run oauth-flow-gemini-enterprise-secops-mcp agentspace link-agent
+
+# Update Gemini Enterprise (AgentSpace) agent configuration
+agentspace-update:
+  uv run oauth-flow-gemini-enterprise-secops-mcp agentspace update
+
+# Verify Gemini Enterprise (AgentSpace) agent status
+agentspace-verify:
+  uv run oauth-flow-gemini-enterprise-secops-mcp agentspace verify
+
+# Display Gemini Enterprise (AgentSpace) UI URL
+agentspace-url:
+  uv run oauth-flow-gemini-enterprise-secops-mcp agentspace url
+
+# Interactive OAuth client setup from client_secret.json
+oauth-setup client_secret:
+  uv run oauth-flow-gemini-enterprise-secops-mcp oauth setup {{ client_secret }}
+
+# Create OAuth authorization in Discovery Engine
+oauth-create-auth:
+  uv run oauth-flow-gemini-enterprise-secops-mcp oauth create-auth
+
+# Verify OAuth authorization status
+oauth-verify:
+  uv run oauth-flow-gemini-enterprise-secops-mcp oauth verify
+
+# Upload Chronicle service account credentials to Secret Manager
+secret-upload *args="":
+  uv run oauth-flow-gemini-enterprise-secops-mcp secret upload {{ args }}
+
+# Verify Secret Manager credentials
+secret-verify *args="":
+  uv run oauth-flow-gemini-enterprise-secops-mcp secret verify {{ args }}
+
+# Verify Vertex AI APIs, auth, and permissions
+vertex-ai-verify:
+  uv run oauth-flow-gemini-enterprise-secops-mcp vertex verify
+
+# Enable required Vertex AI APIs
+vertex-ai-enable-apis:
+  uv run oauth-flow-gemini-enterprise-secops-mcp vertex enable-apis
+
+# Configure IAM permissions for Reasoning Engine and Discovery Engine service agents
+iam-setup:
+  uv run oauth-flow-gemini-enterprise-secops-mcp iam setup
+
+# Verify IAM permissions for service agents
+iam-verify:
+  uv run oauth-flow-gemini-enterprise-secops-mcp iam verify
+
+# Complete end-to-end deployment workflow with OAuth and AgentSpace linking
+full-deploy-with-oauth:
+  uv run oauth-flow-gemini-enterprise-secops-mcp workflow full-deploy
+
+# Redeploy Agent Engine and update AgentSpace configuration
+redeploy-all:
+  uv run oauth-flow-gemini-enterprise-secops-mcp workflow redeploy-all
 
 # Check overall system status
 status:
