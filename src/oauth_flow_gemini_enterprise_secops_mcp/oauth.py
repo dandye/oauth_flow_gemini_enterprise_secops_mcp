@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-OAuth Manager for Google MCP Security Agent
+"""OAuth Manager for Google MCP Security Agent.
 
 This script manages OAuth authorization for AgentSpace integration including
 creating, updating, and deleting OAuth authorizations.
@@ -9,7 +8,8 @@ creating, updating, and deleting OAuth authorizations.
 import json
 import os
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
+from typing import Any
 
 import google.auth
 import google_auth_oauthlib.flow
@@ -30,8 +30,7 @@ class OAuthManager:
   """Manages OAuth configuration and operations."""
 
   def __init__(self, env_file: Path):
-    """
-    Initialize the OAuth manager.
+    """Initialize the OAuth manager.
 
     Args:
         env_file: Path to the environment file.
@@ -96,8 +95,7 @@ class OAuthManager:
       scopes: list[str],
       redirect_uri: str = "https://vertexaisearch.cloud.google.com/oauth-redirect",
   ) -> tuple[str, str, str]:
-    """
-    Generate OAuth authorization URI from client secret file.
+    """Generate OAuth authorization URI from client secret file.
 
     Args:
         client_secret_file: Path to the OAuth client secret JSON file
@@ -149,8 +147,7 @@ class OAuthManager:
       auth_uri: str,
       token_uri: str = "https://oauth2.googleapis.com/token",
   ) -> bool:
-    """
-    Create OAuth authorization in Discovery Engine.
+    """Create OAuth authorization in Discovery Engine.
 
     Args:
         auth_id: Unique identifier for the authorization
@@ -214,8 +211,7 @@ class OAuthManager:
       return False
 
   def delete_authorization(self, auth_id: str) -> bool:
-    """
-    Delete OAuth authorization from Discovery Engine.
+    """Delete OAuth authorization from Discovery Engine.
 
     Args:
         auth_id: Authorization ID to delete
@@ -254,8 +250,7 @@ class OAuthManager:
       return False
 
   def get_authorization(self, auth_id: str) -> dict[str, Any] | None:
-    """
-    Get OAuth authorization details from Discovery Engine.
+    """Get OAuth authorization details from Discovery Engine.
 
     Args:
         auth_id: Authorization ID to retrieve
@@ -305,8 +300,7 @@ def setup(
         typer.Option("--scopes", "-s", help="Comma-separated OAuth scopes"),
     ] = None,
 ):
-  """
-  Setup OAuth authorization from client secret file.
+  """Setup OAuth authorization from client secret file.
 
   This command will:
   1. Generate OAuth authorization URI
@@ -361,8 +355,7 @@ def create_auth(
         Path, typer.Option("--env-file", "-e", help="Path to environment file")
     ] = Path(".env"),
 ):
-  """
-  Create OAuth authorization in Discovery Engine.
+  """Create OAuth authorization in Discovery Engine.
 
   Uses OAuth credentials from environment file to create the authorization.
   """
@@ -415,8 +408,7 @@ def verify(
         Path, typer.Option("--env-file", "-e", help="Path to environment file")
     ] = Path(".env"),
 ):
-  """
-  Verify OAuth authorization status.
+  """Verify OAuth authorization status.
 
   Checks if the authorization exists and displays its details.
   """
@@ -454,9 +446,7 @@ def delete(
         bool, typer.Option("--force", "-f", help="Skip confirmation prompt")
     ] = False,
 ):
-  """
-  Delete OAuth authorization from Discovery Engine.
-  """
+  """Delete OAuth authorization from Discovery Engine."""
   manager = OAuthManager(env_file)
 
   # Use provided auth_id or get from environment

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Environment Variable Validation Utility
+"""Environment Variable Validation Utility.
 
 This module provides validation for environment variables to detect when users
 have copied .env.example without updating placeholder values.
@@ -48,8 +47,7 @@ PLACEHOLDER_REGEX_PATTERNS = [
 
 
 def is_placeholder_value(var_name: str, value: str) -> tuple[bool, str | None]:
-  """
-  Check if a value is a placeholder from .env.example.
+  """Check if a value is a placeholder from .env.example.
 
   Args:
       var_name: Name of the environment variable
@@ -80,8 +78,7 @@ def is_placeholder_value(var_name: str, value: str) -> tuple[bool, str | None]:
 def validate_env_vars(
     required_vars: list[str], env_vars: dict[str, str] | None = None
 ) -> tuple[bool, list[ValidationError]]:
-  """
-  Validate required environment variables.
+  """Validate required environment variables.
 
   Checks for both missing variables and placeholder values from .env.example.
 
@@ -131,8 +128,7 @@ def validate_env_vars(
 
 
 def format_validation_errors(errors: list[ValidationError]) -> str:
-  """
-  Format validation errors into a user-friendly error message.
+  """Format validation errors into a user-friendly error message.
 
   Args:
       errors: List of ValidationError objects
@@ -184,8 +180,7 @@ def format_validation_errors(errors: list[ValidationError]) -> str:
 def validate_file_path_exists(
     var_name: str, file_path: str
 ) -> ValidationError | None:
-  """
-  Validate that a file path exists and is not a placeholder.
+  """Validate that a file path exists and is not a placeholder.
 
   Args:
       var_name: Name of the environment variable

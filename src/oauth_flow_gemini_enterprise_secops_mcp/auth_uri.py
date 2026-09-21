@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""
-Utility to construct a Gemini Enterprise Authorization URI for Google SecOps.
+"""Utility to construct a Gemini Enterprise Authorization URI for Google SecOps.
 This URI is used when registering an Authorization resource in Google Cloud.
 """
 
 import os
-from urllib.parse import urlencode, quote_plus, quote
+from urllib.parse import quote
+from urllib.parse import urlencode
+
 from dotenv import load_dotenv
 
 # ==============================================================================

@@ -25,28 +25,24 @@ REPO_ROOT = PACKAGE_DIR.parents[1]
 # Load environment variables
 load_dotenv(REPO_ROOT / ".env")
 
-# Ensure repository root, package root, and installation_scripts are importable
-for path_entry in (
-    str(REPO_ROOT),
-    str(PACKAGE_DIR),
-    str(PACKAGE_DIR / "installation_scripts"),
-):
+# Ensure repository root and package root are importable
+for path_entry in (str(REPO_ROOT), str(PACKAGE_DIR)):
   if path_entry not in sys.path:
     sys.path.insert(0, path_entry)
 
 
 def get_app(module_name: str) -> typer.Typer | None:
-  """Dynamically load a Typer sub-application from installation_scripts.
+  """Dynamically load a Typer sub-application from the package.
 
   Args:
-    module_name: Name of the module inside installation_scripts.
+    module_name: Name of the module inside oauth_flow_gemini_enterprise_secops_mcp.
 
   Returns:
     Loaded Typer application or None if unavailable.
   """
   try:
     module = importlib.import_module(
-        f"oauth_flow_gemini_enterprise_secops_mcp.installation_scripts.{module_name}"
+        f"oauth_flow_gemini_enterprise_secops_mcp.{module_name}"
     )
     return module.app
   except (ImportError, AttributeError):
@@ -68,20 +64,12 @@ app = typer.Typer(
 
 # Mount management subcommands
 SUBCOMMAND_SPECS = [
-    ("manage_agent_engine", "agent-engine", "Manage Agent Engine instances"),
-    ("manage_agentspace", "agentspace", "Manage AgentSpace apps and agents"),
-    ("manage_oauth", "oauth", "Manage OAuth authorizations"),
-    ("upload_secret", "secret", "Upload and verify Secret Manager credentials"),
-    ("manage_datastore", "datastore", "Manage data stores"),
-    ("manage_rag", "rag", "Manage RAG corpora"),
-    ("manage_memories", "memories", "Manage Agent Engine memories"),
-    ("manage_iam", "iam", "Manage IAM permissions for service accounts"),
-    ("manage_vertex_ai", "vertex", "Verify and manage Vertex AI setup"),
-    (
-        "manage_chat_ops",
-        "chatops",
-        "Manage and test ChatOps cards and functions",
-    ),
+    ("agent_engine", "agent-engine", "Manage Agent Engine instances"),
+    ("agentspace", "agentspace", "Manage AgentSpace apps and agents"),
+    ("oauth", "oauth", "Manage OAuth authorizations"),
+    ("secret", "secret", "Upload and verify Secret Manager credentials"),
+    ("iam", "iam", "Manage IAM permissions for service accounts"),
+    ("vertex_ai", "vertex", "Verify and manage Vertex AI setup"),
 ]
 
 for mod_name, sub_name, sub_help in SUBCOMMAND_SPECS:
@@ -156,9 +144,7 @@ def full_deploy(
     raise typer.Exit(code=1)
 
   console.print("\n[yellow]Step 2: Create OAuth Authorization[/yellow]")
-  from oauth_flow_gemini_enterprise_secops_mcp.installation_scripts.manage_oauth import (
-      OAuthManager,
-  )
+  from oauth_flow_gemini_enterprise_secops_mcp.oauth import OAuthManager
 
   oauth_manager = OAuthManager(env_file)
 
@@ -189,7 +175,7 @@ def full_deploy(
     raise typer.Exit(code=1)
 
   console.print("\n[yellow]Step 3: Link Agent to AgentSpace[/yellow]")
-  from oauth_flow_gemini_enterprise_secops_mcp.installation_scripts.manage_agentspace import (
+  from oauth_flow_gemini_enterprise_secops_mcp.agentspace import (
       AgentSpaceManager,
   )
 
@@ -228,7 +214,7 @@ def redeploy_all(
     raise typer.Exit(code=1)
 
   console.print("\n[yellow]Step 2: Update AgentSpace Configuration[/yellow]")
-  from oauth_flow_gemini_enterprise_secops_mcp.installation_scripts.manage_agentspace import (
+  from oauth_flow_gemini_enterprise_secops_mcp.agentspace import (
       AgentSpaceManager,
   )
 
@@ -258,7 +244,7 @@ def status(
   """
   console.print("\n[bold blue]System Status Check[/bold blue]\n")
 
-  from oauth_flow_gemini_enterprise_secops_mcp.installation_scripts.manage_agentspace import (
+  from oauth_flow_gemini_enterprise_secops_mcp.agentspace import (
       AgentSpaceManager,
   )
 

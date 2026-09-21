@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Vertex AI Setup and Verification Manager
+"""Vertex AI Setup and Verification Manager.
 
 This script helps verify and manage Vertex AI setup requirements including
 API enablement, authentication, permissions, and quota status.
@@ -17,7 +16,9 @@ from google.auth import default
 from google.auth.exceptions import DefaultCredentialsError
 
 # Import validation utilities
-from installation_scripts.env_validation import is_placeholder_value
+from oauth_flow_gemini_enterprise_secops_mcp.env_validation import (
+    is_placeholder_value,
+)
 
 app = typer.Typer(
     add_completion=False,
@@ -51,8 +52,7 @@ class VertexAIManager:
   ]
 
   def __init__(self, env_file: Path):
-    """
-    Initialize the Vertex AI manager.
+    """Initialize the Vertex AI manager.
 
     Args:
         env_file: Path to the environment file.
@@ -73,8 +73,7 @@ class VertexAIManager:
   def verify_setup(
       self, skip_apis: bool = False, skip_permissions: bool = False
   ) -> bool:
-    """
-    Run complete verification of Vertex AI setup.
+    """Run complete verification of Vertex AI setup.
 
     Args:
         skip_apis: Skip API enablement checks

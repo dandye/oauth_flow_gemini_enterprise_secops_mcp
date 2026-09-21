@@ -64,11 +64,18 @@ This repository strictly complies with the **Google Python Style Guide**:
 ├── src/
 │   └── oauth_flow_gemini_enterprise_secops_mcp/
 │       ├── __init__.py
-│       ├── __main__.py   # Module execution entrypoint (python -m oauth_flow_gemini_enterprise_secops_mcp)
-│       ├── cli.py        # Typer + Rich unified CLI (2-space indent, 80 cols)
-│       ├── core.py       # Core package implementation
-│       ├── installation_scripts/ # Agent Engine, Gemini Enterprise, OAuth, and IAM CLI modules
-│       └── py.typed      # PEP 561 marker
+│       ├── __main__.py      # Module execution entrypoint (python -m oauth_flow_gemini_enterprise_secops_mcp)
+│       ├── agent_engine.py  # Vertex AI Agent Engine deployment and management
+│       ├── agentspace.py    # Gemini Enterprise (AgentSpace) registration and linking
+│       ├── auth_uri.py      # OAuth authorization URI generator
+│       ├── cli.py           # Typer + Rich unified CLI (2-space indent, 80 cols)
+│       ├── core.py          # Core package implementation
+│       ├── env_validation.py # Environment variable validation utilities
+│       ├── iam.py           # Service agent IAM role provisioning
+│       ├── oauth.py         # Discovery Engine OAuth authorization management
+│       ├── py.typed         # PEP 561 marker
+│       ├── secret.py        # Secret Manager credential upload and verification
+│       └── vertex_ai.py     # Vertex AI API and quota verification
 └── tests/
     ├── conftest.py       # Pytest fixtures and mock setup
     └── test_basic.py     # Unit test suite

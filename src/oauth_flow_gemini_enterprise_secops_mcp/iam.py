@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-IAM Manager for Google Cloud Platform
+"""IAM Manager for Google Cloud Platform.
 
 This script manages IAM policy bindings for service accounts required by
 AgentSpace integration, including AI Platform Reasoning Engine and Discovery
@@ -15,7 +14,8 @@ import typer
 from dotenv import load_dotenv
 from google.auth import default
 from google.cloud import resourcemanager_v3
-from google.iam.v1 import iam_policy_pb2, policy_pb2
+from google.iam.v1 import iam_policy_pb2
+from google.iam.v1 import policy_pb2
 
 app = typer.Typer(
     add_completion=False,
@@ -27,8 +27,7 @@ class IAMManager:
   """Manages IAM policy bindings for Google Cloud service accounts."""
 
   def __init__(self, env_file: Path):
-    """
-    Initialize the IAM manager.
+    """Initialize the IAM manager.
 
     Args:
         env_file: Path to the environment file.
@@ -79,8 +78,7 @@ class IAMManager:
       raise typer.Exit(code=1)
 
   def _get_service_account_email(self, service: str) -> str:
-    """
-    Get the service account email for a specific Google-managed service.
+    """Get the service account email for a specific Google-managed service.
 
     Args:
         service: Service identifier (e.g., 'aiplatform-re', 'discoveryengine')
@@ -107,8 +105,7 @@ class IAMManager:
   def _add_role_binding(
       self, service_account: str, role: str, dry_run: bool = False
   ) -> bool:
-    """
-    Add a role binding to a service account.
+    """Add a role binding to a service account.
 
     Args:
         service_account: Service account email
@@ -153,8 +150,7 @@ class IAMManager:
   def _remove_role_binding(
       self, service_account: str, role: str, dry_run: bool = False
   ) -> bool:
-    """
-    Remove a role binding from a service account.
+    """Remove a role binding from a service account.
 
     Args:
         service_account: Service account email
@@ -192,8 +188,7 @@ class IAMManager:
     return True
 
   def _check_role_binding(self, service_account: str, role: str) -> bool:
-    """
-    Check if a service account has a specific role.
+    """Check if a service account has a specific role.
 
     Args:
         service_account: Service account email
@@ -214,8 +209,7 @@ class IAMManager:
   def setup_agentspace_permissions(
       self, dry_run: bool = False, verbose: bool = False
   ) -> dict[str, list[str]]:
-    """
-    Setup all required IAM permissions for AgentSpace integration.
+    """Setup all required IAM permissions for AgentSpace integration.
 
     Args:
         dry_run: If True, only simulate the changes
@@ -289,8 +283,7 @@ class IAMManager:
     return results
 
   def verify_agentspace_permissions(self) -> dict[str, bool]:
-    """
-    Verify all required AgentSpace permissions are configured.
+    """Verify all required AgentSpace permissions are configured.
 
     Returns:
         Dictionary mapping permission descriptions to boolean status
@@ -322,8 +315,7 @@ class IAMManager:
     return results
 
   def list_service_account_roles(self, service: str) -> list[str]:
-    """
-    List all roles granted to a specific Google-managed service account.
+    """List all roles granted to a specific Google-managed service account.
 
     Args:
         service: Service identifier (e.g., 'aiplatform-re', 'discoveryengine')
@@ -371,8 +363,7 @@ def setup_command(
         ),
     ] = Path(".env"),
 ):
-  """
-  Setup all required IAM permissions for AgentSpace integration.
+  """Setup all required IAM permissions for AgentSpace integration.
 
   This configures the following service accounts:
   - AI Platform Reasoning Engine Service Agent (for RAG access)
@@ -454,9 +445,7 @@ def verify_command(
         ),
     ] = Path(".env"),
 ):
-  """
-  Verify all required AgentSpace IAM permissions are configured.
-  """
+  """Verify all required AgentSpace IAM permissions are configured."""
   manager = IAMManager(env_file)
 
   typer.secho("=" * 50, fg=typer.colors.CYAN)
@@ -515,8 +504,7 @@ def list_roles_command(
         ),
     ] = Path(".env"),
 ):
-  """
-  List all IAM roles granted to a specific Google-managed service account.
+  """List all IAM roles granted to a specific Google-managed service account.
 
   SERVICE can be:
   - aiplatform-re: AI Platform Reasoning Engine Service Agent

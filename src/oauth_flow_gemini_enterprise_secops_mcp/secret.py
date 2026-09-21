@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Upload Service Account to Google Secret Manager
+"""Upload Service Account to Google Secret Manager.
 
 This script uploads the Chronicle service account JSON file to Secret Manager
 for secure access by the deployed agent.
@@ -23,10 +22,9 @@ def create_or_update_secret(
     secret_id: str,
     secret_data: str,
     force: bool = False,
-    credentials_path: Path = None,
+    credentials_path: Path | None = None,
 ) -> str:
-  """
-  Create or update a secret in Secret Manager.
+  """Create or update a secret in Secret Manager.
 
   Args:
       project_id: GCP project ID
@@ -120,8 +118,7 @@ def upload(
         help="Path to service account key file for authentication (if different from ADC)",
     ),
 ):
-  """
-  Upload Chronicle service account JSON to Secret Manager.
+  """Upload Chronicle service account JSON to Secret Manager.
 
   This reads the CHRONICLE_SERVICE_ACCOUNT_PATH from .env and uploads
   the JSON file to Google Secret Manager for secure access.
@@ -253,9 +250,7 @@ def verify(
         help="Path to service account key file for authentication (if different from ADC)",
     ),
 ):
-  """
-  Verify that the secret exists and is accessible.
-  """
+  """Verify that the secret exists and is accessible."""
   typer.echo("\n" + "=" * 80)
   typer.secho("Verify Secret Access", fg=typer.colors.BLUE, bold=True)
   typer.echo("=" * 80 + "\n")

@@ -1,26 +1,22 @@
 #!/usr/bin/env python3
-"""
-Simplified Agent Engine Management Script
-Focused on OneMCP SecOps Agent with OAuth Passthrough
+"""Simplified Agent Engine Management Script
+Focused on OneMCP SecOps Agent with OAuth Passthrough.
 """
 
+import importlib
 import os
 import sys
-import importlib
-from pathlib import Path
-from typing import Optional, List
 
+import google.auth.transport._mtls_helper as _mtls_helper
 import typer
 import vertexai
+from dotenv import load_dotenv
 from google.cloud import aiplatform
 from google.cloud import aiplatform_v1beta1
 from google.protobuf import field_mask_pb2
 from vertexai import agent_engines
 from vertexai.agent_engines import AdkApp
 from vertexai.preview.reasoning_engines import ReasoningEngine
-from dotenv import load_dotenv
-import google.auth.transport._mtls_helper as _mtls_helper
-import logging
 
 # Bypass Cloudtop mTLS cert-provider subprocess crash (exit code -11)
 _mtls_helper.has_client_certificate = lambda: False
@@ -178,7 +174,7 @@ def deploy(
           fg=typer.colors.YELLOW,
       )
 
-    typer.secho(f"\nDeployment successful!", fg=typer.colors.GREEN, bold=True)
+    typer.secho("\nDeployment successful!", fg=typer.colors.GREEN, bold=True)
     typer.echo(f"Resource Name: {remote_app.resource_name}")
 
     if run_test:
@@ -306,7 +302,7 @@ def update(
           fg=typer.colors.YELLOW,
       )
 
-    typer.secho(f"\nUpdate successful!", fg=typer.colors.GREEN, bold=True)
+    typer.secho("\nUpdate successful!", fg=typer.colors.GREEN, bold=True)
     typer.echo(f"Resource Name: {remote_app.resource_name}")
   except Exception as e:
     typer.secho(f"\nUpdate failed: {e}", fg=typer.colors.RED)
@@ -416,10 +412,10 @@ def list_engines(
 
 @app.command()
 def delete(
-    index: Optional[int] = typer.Option(
+    index: int | None = typer.Option(
         None, help="Index of the engine to delete (from list)"
     ),
-    resource: Optional[str] = typer.Option(
+    resource: str | None = typer.Option(
         None, help="Full resource name of the engine to delete"
     ),
     force: bool = typer.Option(

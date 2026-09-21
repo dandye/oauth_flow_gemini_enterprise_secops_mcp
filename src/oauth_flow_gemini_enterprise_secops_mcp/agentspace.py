@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-AgentSpace Manager for Google MCP Security Agent
+"""AgentSpace Manager for Google MCP Security Agent.
 
 This script manages AgentSpace operations including registration, updates,
 verification, and deletion of agents in AgentSpace.
@@ -8,7 +7,8 @@ verification, and deletion of agents in AgentSpace.
 
 import os
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
+from typing import Any
 
 import google.auth
 import requests
@@ -17,8 +17,10 @@ from dotenv import load_dotenv
 from google.auth.transport import requests as google_requests
 
 # Import validation utilities
-from installation_scripts.env_validation import (
+from oauth_flow_gemini_enterprise_secops_mcp.env_validation import (
     format_validation_errors,
+)
+from oauth_flow_gemini_enterprise_secops_mcp.env_validation import (
     validate_env_vars,
 )
 
@@ -45,8 +47,7 @@ class AgentSpaceManager:
   """Manages AgentSpace configuration and operations."""
 
   def __init__(self, env_file: Path):
-    """
-    Initialize the AgentSpace manager.
+    """Initialize the AgentSpace manager.
 
     Args:
         env_file: Path to the environment file.
@@ -123,8 +124,7 @@ class AgentSpaceManager:
     return self.creds.token
 
   def _validate_environment(self) -> tuple[bool, list]:
-    """
-    Validate required environment variables for AgentSpace operations.
+    """Validate required environment variables for AgentSpace operations.
 
     Returns:
         Tuple of (is_valid, errors) where errors is a list of ValidationError objects
@@ -386,8 +386,7 @@ class AgentSpaceManager:
       app_type: str | None = None,
       industry_vertical: str | None = None,
   ) -> bool:
-    """
-    Create a new AgentSpace app (engine) in Discovery Engine.
+    """Create a new AgentSpace app (engine) in Discovery Engine.
 
     CRITICAL: For apps to appear in the Gemini Enterprise web UI, you MUST include
     appType=APP_TYPE_INTRANET and industryVertical=GENERIC. Without these fields,
@@ -557,8 +556,7 @@ class AgentSpaceManager:
       return False
 
   def delete_app(self, app_id: str, force: bool = False) -> bool:
-    """
-    Delete an AgentSpace app (engine) from Discovery Engine.
+    """Delete an AgentSpace app (engine) from Discovery Engine.
 
     Args:
         app_id: The app ID to delete
@@ -758,8 +756,7 @@ class AgentSpaceManager:
       tool_description: str | None = None,
       auth_id: str | None = None,
   ) -> bool:
-    """
-    Link an existing agent engine to AgentSpace with OAuth authorization.
+    """Link an existing agent engine to AgentSpace with OAuth authorization.
 
     Args:
         display_name: Display name for the agent in AgentSpace
@@ -862,8 +859,7 @@ class AgentSpaceManager:
       agent_id: str | None = None,
       force: bool = False,
   ) -> bool:
-    """
-    Unlink (remove) an agent from AgentSpace while keeping the app intact.
+    """Unlink (remove) an agent from AgentSpace while keeping the app intact.
 
     Args:
         agent_id: ID of the agent to unlink (defaults to AGENTSPACE_AGENT_ID from env)
@@ -950,8 +946,7 @@ class AgentSpaceManager:
       description: str | None = None,
       tool_description: str | None = None,
   ) -> bool:
-    """
-    Update an existing agent's configuration in AgentSpace.
+    """Update an existing agent's configuration in AgentSpace.
 
     Args:
         agent_id: ID of the agent to update
@@ -1033,8 +1028,7 @@ class AgentSpaceManager:
       return False
 
   def list_apps(self, show_raw: bool = True) -> bool:
-    """
-    List all apps in the AgentSpace collection.
+    """List all apps in the AgentSpace collection.
 
     Args:
         show_raw: If True, show raw JSON response for debugging
@@ -1119,8 +1113,7 @@ class AgentSpaceManager:
       return False
 
   def list_agents(self, show_raw: bool = True) -> bool:
-    """
-    List all agents in the AgentSpace app.
+    """List all agents in the AgentSpace app.
 
     Args:
         show_raw: If True, show raw JSON response for debugging
@@ -1211,17 +1204,16 @@ class AgentSpaceManager:
 
         typer.echo()
 
-      return agents
+      return True
 
     except requests.exceptions.RequestException as e:
       typer.echo(f"Error listing agents: {e}", err=True)
       if hasattr(e.response, "text"):
         typer.echo(f"Response: {e.response.text}", err=True)
-      return []
+      return False
 
   def get_app_details(self, app_id: str) -> bool:
-    """
-    Get detailed information about a specific app.
+    """Get detailed information about a specific app.
 
     Args:
         app_id: The ID of the app to get details for
@@ -1628,8 +1620,7 @@ def get_app_details(
         Path, typer.Option(help="Path to the environment file.")
     ] = Path(".env"),
 ) -> None:
-  """
-  Get detailed information about a specific AgentSpace app.
+  """Get detailed information about a specific AgentSpace app.
 
   This command retrieves the raw JSON details for an app, which is useful for
   debugging and understanding the exact configuration of apps created through
@@ -1693,30 +1684,29 @@ def create_app(
         Path, typer.Option(help="Path to the environment file.")
     ] = Path(".env"),
 ) -> None:
-  """
-    Create a new AgentSpace app in Discovery Engine.
+  r"""Create a new AgentSpace app in Discovery Engine.
 
-    CRITICAL: For apps to appear in the Gemini Enterprise web UI, you MUST include
-    --app-type APP_TYPE_INTRANET and --industry-vertical GENERIC. Without these,
-    apps will be created successfully but will NOT be visible in the console UI.
+  CRITICAL: For apps to appear in the Gemini Enterprise web UI, you MUST include
+  --app-type APP_TYPE_INTRANET and --industry-vertical GENERIC. Without these,
+  apps will be created successfully but will NOT be visible in the console UI.
 
-    Official documentation: https://cloud.google.com/gemini/enterprise/docs/create-app
+  Official documentation: https://cloud.google.com/gemini/enterprise/docs/create-app
 
-    Examples:
-        # RECOMMENDED: Create app with web UI visibility
-        python manage.py agentspace create-app \\
+  Examples:
+      # RECOMMENDED: Create app with web UI visibility
+      python manage.py agentspace create-app \\
             --name "My App" \\
             --type SOLUTION_TYPE_CHAT \\
             --no-datastore \\
             --app-type APP_TYPE_INTRANET \\
             --industry-vertical GENERIC
 
-        # WITHOUT app_type (app will be created but invisible in web UI)
-        python manage.py agentspace create-app --name "My App" --no-datastore
+      # WITHOUT app_type (app will be created but invisible in web UI)
+      python manage.py agentspace create-app --name "My App" --no-datastore
 
-        # Create app with a data store (may not show in web UI)
-        python manage.py agentspace create-app --name "My App" --data-store my-store-id
-    """
+      # Create app with a data store (may not show in web UI)
+      python manage.py agentspace create-app --name "My App" --data-store my-store-id
+  """
   manager = AgentSpaceManager(env_file)
 
   # Handle conflicting options
@@ -1758,8 +1748,7 @@ def delete_app(
         Path, typer.Option(help="Path to the environment file.")
     ] = Path(".env"),
 ) -> None:
-  """
-  Delete an AgentSpace app (engine) from Discovery Engine.
+  """Delete an AgentSpace app (engine) from Discovery Engine.
 
   Examples:
       # Delete with confirmation prompt
