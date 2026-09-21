@@ -1,8 +1,9 @@
 # Gemini Enterprise SecOps MCP OAuth Deployment
 
-Google SecOps Remote MCP ADK Agent with Gemini Enterprise OAuth Passthrough.
+Google SecOps Remote MCP ADK Agent (`google-adk>=2.0.0`) with Gemini Enterprise OAuth Passthrough.
 
-Adheres to the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) (2-space indentation, 80-column line limit, Pyink formatter, Pytype static analyzer).
+- **Interactive Colab Guide**: [SecOps remote MCP OAuth flow](https://colab.research.google.com/drive/1Q4fCimoRiUBkAwEG2EHmfe1z-FxQ5sWw)
+- **Style & Tooling**: Adheres to the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) (2-space indentation, 80-column line limit, Pyink formatter, Pytype static analyzer).
 
 ## Quickstart
 
