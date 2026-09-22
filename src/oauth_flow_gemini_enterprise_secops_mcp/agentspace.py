@@ -56,26 +56,32 @@ class AgentSpaceManager:
     self.env_vars = self._load_env_vars()
 
     # Initialize credentials with proper scopes for Discovery Engine API
-    service_account_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    if service_account_path:
-      # Use service account with explicit scopes
-      from google.oauth2 import service_account
+    local_adc = (
+        self.env_file.resolve().parent
+        / ".gcloud"
+        / "application_default_credentials.json"
+    )
+    if (
+        not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+        and local_adc.exists()
+    ):
+      os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(local_adc)
 
-      self.creds = service_account.Credentials.from_service_account_file(
-          service_account_path,
-          scopes=["https://www.googleapis.com/auth/cloud-platform"],
-      )
-      # Extract project from service account file
-      import json
+    self.creds, self.project = google.auth.default(
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+    if not self.project:
+      self.project = self.env_vars.get("GOOGLE_CLOUD_PROJECT")
+      if not self.project:
+        creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+        if creds_path and Path(creds_path).exists():
+          import json
 
-      with open(service_account_path) as f:
-        sa_info = json.load(f)
-        self.project = sa_info.get("project_id")
-    else:
-      # Fall back to default credentials
-      self.creds, self.project = google.auth.default(
-          scopes=["https://www.googleapis.com/auth/cloud-platform"]
-      )
+          with open(creds_path) as f:
+            creds_info = json.load(f)
+            self.project = creds_info.get("project_id") or creds_info.get(
+                "quota_project_id"
+            )
 
   def _load_env_vars(self) -> dict[str, str]:
     """Load environment variables from the .env file using python-dotenv."""
@@ -290,6 +296,17 @@ class AgentSpaceManager:
       response = requests.post(api_url, headers=headers, json=agent_config)
       response.raise_for_status()
     except requests.exceptions.RequestException as e:
+      if (
+          e.response is not None
+          and e.response.status_code == 400
+          and "FAILED_PRECONDITION" in e.response.text
+          and self.env_vars.get("AGENTSPACE_AGENT_ID")
+      ):
+        typer.echo(
+            "Service account cannot create a new agent without a seat license; "
+            f"updating existing agent {self.env_vars['AGENTSPACE_AGENT_ID']}..."
+        )
+        return self.update_agent()
       typer.secho(f" API request failed: {e}", fg=typer.colors.RED)
       if e.response is not None:
         typer.echo(f"  Response: {e.response.text}")
@@ -849,6 +866,24 @@ class AgentSpaceManager:
       return True
 
     except requests.exceptions.RequestException as e:
+      if (
+          e.response is not None
+          and e.response.status_code == 400
+          and "FAILED_PRECONDITION" in e.response.text
+          and self.env_vars.get("AGENTSPACE_AGENT_ID")
+      ):
+        typer.echo(
+            "Service account cannot create a new agent without a seat license; "
+            f"updating existing agent {self.env_vars['AGENTSPACE_AGENT_ID']}..."
+        )
+        return self.update_agent_config(
+            agent_id=self.env_vars["AGENTSPACE_AGENT_ID"],
+            display_name=display_name,
+            description=description,
+            tool_description=tool_description,
+            reasoning_engine=reasoning_engine,
+            auth_id=auth_id,
+        )
       typer.echo(f"Error linking agent to AgentSpace: {e}", err=True)
       if hasattr(e.response, "text"):
         typer.echo(f"Response: {e.response.text}", err=True)
@@ -945,6 +980,8 @@ class AgentSpaceManager:
       display_name: str | None = None,
       description: str | None = None,
       tool_description: str | None = None,
+      reasoning_engine: str | None = None,
+      auth_id: str | None = None,
   ) -> bool:
     """Update an existing agent's configuration in AgentSpace.
 
@@ -953,6 +990,8 @@ class AgentSpaceManager:
         display_name: New display name for the agent
         description: New description of the agent
         tool_description: New description of what the agent tool does
+        reasoning_engine: Reasoning engine resource name to link
+        auth_id: OAuth authorization ID to link
 
     Returns:
         True if successful, False otherwise
@@ -1000,13 +1039,30 @@ class AgentSpaceManager:
       data["description"] = description
       update_mask.append("description")
 
-    if tool_description:
-      if "adk_agent_definition" not in data:
-        data["adk_agent_definition"] = {}
-      data["adk_agent_definition"]["tool_settings"] = {
-          "tool_description": tool_description
+    if not reasoning_engine:
+      reasoning_engine = self.env_vars.get("AGENT_ENGINE_RESOURCE_NAME")
+
+    if tool_description or reasoning_engine:
+      data["adkAgentDefinition"] = {}
+      if tool_description:
+        data["adkAgentDefinition"]["toolSettings"] = {
+            "toolDescription": tool_description
+        }
+      if reasoning_engine:
+        data["adkAgentDefinition"]["provisionedReasoningEngine"] = {
+            "reasoningEngine": reasoning_engine
+        }
+      update_mask.append("adkAgentDefinition")
+
+    if not auth_id:
+      auth_id = self.env_vars.get("OAUTH_AUTH_ID")
+    if auth_id:
+      data["authorizationConfig"] = {
+          "toolAuthorizations": [
+              f"projects/{project_number}/locations/global/authorizations/{auth_id}"
+          ]
       }
-      update_mask.append("adk_agent_definition.tool_settings.tool_description")
+      update_mask.append("authorizationConfig")
 
     if not update_mask:
       typer.echo("Warning: No fields to update", err=True)
