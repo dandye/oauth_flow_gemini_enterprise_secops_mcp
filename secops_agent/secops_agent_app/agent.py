@@ -19,6 +19,17 @@ from google.genai import types
 from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumentor
 
 from google.adk.tools.tool_context import ToolContext
+from mcp.client.session import ClientSession
+
+
+async def _bypass_mcp_output_schema_validation(
+    self: ClientSession, name: str, result: Any
+) -> None:
+  """Bypass mcp.ClientSession outputSchema validation for Chronicle OneMCP streaming/text responses."""
+  del self, name, result
+
+
+ClientSession.validate_tool_result = _bypass_mcp_output_schema_validation
 
 # Default TTL (seconds) for caching the remote Chronicle OneMCP tools/list response
 DEFAULT_MCP_TOOL_CACHE_TTL_SECONDS = 300.0
