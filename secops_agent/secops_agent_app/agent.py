@@ -262,19 +262,37 @@ def create_agent() -> Agent:
       region, tool_list_cache_ttl_seconds=cache_ttl
   )
 
-  return Agent(
-      name="secops_agent",
-      model=Gemini(
-          model="gemini-2.5-pro",
-          use_interactions_api=use_interactions_api,
-          retry_options=types.HttpRetryOptions(attempts=3),
-      ),
-      static_instruction=STATIC_SECOPS_INSTRUCTION,
-      instruction=f"""Current Tenant Information:
+  default_model = (
+      "gemini-3-flash-preview" if use_interactions_api else "gemini-2.5-pro"
+  )
+  model_name = os.environ.get("SECOPS_MODEL", default_model)
+  tenant_instruction = f"""Current Tenant Information:
 - Project ID: {chronicle_project_id}
 - Customer ID: {customer_id}
 - Region: {region}
-""",
+"""
+
+  # When use_interactions_api=True, ADK's _get_latest_user_contents slices the
+  # trailing user messages for previous_interaction_id chaining. If both
+  # static_instruction and instruction are set, ADK appends instruction as a
+  # trailing user text message after function_response parts. Unifying them into
+  # instruction keeps the full prompt in system_instruction across chained turns.
+  if use_interactions_api:
+    static_instruction = None
+    full_instruction = f"{STATIC_SECOPS_INSTRUCTION}\n{tenant_instruction}"
+  else:
+    static_instruction = STATIC_SECOPS_INSTRUCTION
+    full_instruction = tenant_instruction
+
+  return Agent(
+      name="secops_agent",
+      model=Gemini(
+          model=model_name,
+          use_interactions_api=use_interactions_api,
+          retry_options=types.HttpRetryOptions(attempts=3),
+      ),
+      static_instruction=static_instruction,
+      instruction=full_instruction,
       planner=BuiltInPlanner(
           thinking_config=types.ThinkingConfig(
               include_thoughts=(
@@ -293,14 +311,22 @@ def create_agent() -> Agent:
 def create_app() -> App:
   """Create the ADK 2.x App container with ContextCacheConfig, EventsCompactionConfig, and ResumabilityConfig."""
   root_agent = create_agent()
-  return App(
-      name="secops_agent_app",
-      root_agent=root_agent,
-      context_cache_config=ContextCacheConfig(
+  use_interactions_api = getattr(
+      root_agent.model, "use_interactions_api", False
+  )
+  context_cache_config = (
+      None
+      if use_interactions_api
+      else ContextCacheConfig(
           min_tokens=4096,
           ttl_seconds=1800,
           cache_intervals=10,
-      ),
+      )
+  )
+  return App(
+      name="secops_agent_app",
+      root_agent=root_agent,
+      context_cache_config=context_cache_config,
       events_compaction_config=EventsCompactionConfig(
           compaction_interval=10,
           overlap_size=2,

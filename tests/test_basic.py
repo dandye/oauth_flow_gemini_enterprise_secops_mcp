@@ -85,17 +85,18 @@ def test_adk_v2_create_app_and_agent_features(
   )
   adk_app = create_app()
   assert adk_app.name == "secops_agent_app"
-  assert adk_app.context_cache_config is not None
-  assert adk_app.context_cache_config.min_tokens == 4096
-  assert adk_app.context_cache_config.ttl_seconds == 1800
+  assert adk_app.context_cache_config is None
   assert adk_app.events_compaction_config is not None
   assert adk_app.events_compaction_config.compaction_interval == 10
   assert adk_app.resumability_config is not None
   assert adk_app.resumability_config.is_resumable is True
 
   agent = create_agent()
-  assert agent.static_instruction is not None
-  assert "Google ADK 2.x" in str(agent.static_instruction)
+  assert agent.model.model == "gemini-3-flash-preview"
+  assert agent.model.use_interactions_api is True
+  assert agent.static_instruction is None
+  assert "Google ADK 2.x" in str(agent.instruction)
+  assert "test-chronicle-project" in str(agent.instruction)
   assert agent.planner is not None
   assert agent.before_tool_callback is confirm_destructive_secops_tool
   assert agent.on_tool_error_callback is handle_secops_tool_error
