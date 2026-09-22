@@ -25,6 +25,14 @@ os.environ.setdefault("ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL", "true")
 # Default TTL (seconds) for caching the remote Chronicle OneMCP tools/list response
 DEFAULT_MCP_TOOL_CACHE_TTL_SECONDS = 300.0
 
+# SecOps MCP tools that are permanently disabled and hidden from the LLM
+DISABLED_SECOPS_TOOLS = frozenset(
+    {
+        "create_feed",
+        "update_feed",
+    }
+)
+
 # Destructive SecOps MCP tools that can optionally require human-in-the-loop confirmation
 DESTRUCTIVE_SECOPS_TOOLS = frozenset(
     {
@@ -41,7 +49,24 @@ STATIC_SECOPS_INSTRUCTION = """You are a Google Security Operations (SecOps) ass
 You have access to the remote Chronicle OneMCP server, which provides tools for SIEM event search, entity investigation, detection rule management, and SOAR case operations.
 Always use the provided tools to fetch authoritative telemetry and case data from Chronicle rather than guessing.
 When a tool requires projectId, customerId, or region, always supply the active tenant identifiers from your instructions.
+Feed creation and modification tools (create_feed, update_feed) are intentionally disabled by policy; you may inspect feeds (list_feeds, get_feed) but must decline requests to create or update feeds.
 """
+
+
+def get_disabled_secops_tools() -> frozenset[str]:
+  """Return the set of disabled SecOps MCP tools (always including DISABLED_SECOPS_TOOLS plus any SECOPS_DISABLED_TOOLS env entries)."""
+  extra_raw = os.environ.get("SECOPS_DISABLED_TOOLS", "")
+  extra = {t.strip() for t in extra_raw.split(",") if t.strip()}
+  return DISABLED_SECOPS_TOOLS | extra
+
+
+def is_secops_tool_enabled(
+    tool: BaseTool, readonly_context: Any = None
+) -> bool:
+  """Filter predicate passed to McpToolset(tool_filter=...) to exclude disabled SecOps tools."""
+  del readonly_context
+  tool_name = getattr(tool, "name", "")
+  return tool_name not in get_disabled_secops_tools()
 
 
 def _requires_tool_confirmation(tool_name: str = "", **_: Any) -> bool:
@@ -60,8 +85,16 @@ def confirm_destructive_secops_tool(
     args: dict[str, Any],
     tool_context: ToolContext,
 ) -> dict[str, Any] | None:
-  """ADK 2.x before_tool_callback enforcing HITL confirmation on destructive SecOps tools."""
+  """ADK 2.x before_tool_callback blocking disabled tools and enforcing HITL confirmation on destructive tools."""
   tool_name = getattr(tool, "name", "")
+  if tool_name in get_disabled_secops_tools():
+    return {
+        "status": "disabled",
+        "tool": tool_name,
+        "error": (
+            f"Tool '{tool_name}' is disabled in this SecOps agent deployment."
+        ),
+    }
   if not _requires_tool_confirmation(tool_name=tool_name):
     return None
 
@@ -171,6 +204,7 @@ def create_mcp_toolset(
   return McpToolset(
       connection_params=StreamableHTTPConnectionParams(url=secops_mcp_url),
       header_provider=get_secops_headers,
+      tool_filter=is_secops_tool_enabled,
       tool_list_cache_ttl_seconds=tool_list_cache_ttl_seconds,
       use_mcp_resources=False,
       errlog=None,  # explicitly None to prevent sys.stderr capturing (which cannot be pickled)

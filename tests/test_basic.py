@@ -8,12 +8,14 @@ from typer.testing import CliRunner
 from oauth_flow_gemini_enterprise_secops_mcp.cli import app
 from oauth_flow_gemini_enterprise_secops_mcp.core import get_secops_mcp_endpoint
 from oauth_flow_gemini_enterprise_secops_mcp.core import run_pipeline
+from secops_agent.secops_agent_app.agent import DISABLED_SECOPS_TOOLS
 from secops_agent.secops_agent_app.agent import _requires_tool_confirmation
 from secops_agent.secops_agent_app.agent import confirm_destructive_secops_tool
 from secops_agent.secops_agent_app.agent import create_agent
 from secops_agent.secops_agent_app.agent import create_app
 from secops_agent.secops_agent_app.agent import get_secops_headers
 from secops_agent.secops_agent_app.agent import handle_secops_tool_error
+from secops_agent.secops_agent_app.agent import is_secops_tool_enabled
 
 runner = CliRunner()
 
@@ -96,6 +98,42 @@ def test_adk_v2_create_app_and_agent_features(
   mcp_toolset = agent.tools[0]
   assert mcp_toolset._tool_list_cache_ttl_seconds == 300.0
   assert mcp_toolset._use_mcp_resources is False
+  assert mcp_toolset.tool_filter is is_secops_tool_enabled
+
+
+def test_disabled_feed_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+  monkeypatch.setenv("REASONING_ENGINE_DEPLOYMENT", "True")
+  assert "create_feed" in DISABLED_SECOPS_TOOLS
+  assert "update_feed" in DISABLED_SECOPS_TOOLS
+
+  create_feed_tool = SimpleNamespace(name="create_feed")
+  update_feed_tool = SimpleNamespace(name="update_feed")
+  list_feeds_tool = SimpleNamespace(name="list_feeds")
+
+  assert is_secops_tool_enabled(create_feed_tool) is False
+  assert is_secops_tool_enabled(update_feed_tool) is False
+  assert is_secops_tool_enabled(list_feeds_tool) is True
+
+  agent = create_agent()
+  mcp_toolset = agent.tools[0]
+  assert mcp_toolset._is_tool_selected(create_feed_tool, None) is False
+  assert mcp_toolset._is_tool_selected(update_feed_tool, None) is False
+  assert mcp_toolset._is_tool_selected(list_feeds_tool, None) is True
+
+  fake_ctx = SimpleNamespace(
+      tool_confirmation=None,
+      actions=SimpleNamespace(skip_summarization=False),
+  )
+  for disabled_tool in (create_feed_tool, update_feed_tool):
+    resp = confirm_destructive_secops_tool(disabled_tool, {}, fake_ctx)
+    assert resp is not None
+    assert resp["status"] == "disabled"
+    assert resp["tool"] == disabled_tool.name
+
+  monkeypatch.setenv("SECOPS_DISABLED_TOOLS", "delete_feed, disable_feed")
+  delete_feed_tool = SimpleNamespace(name="delete_feed")
+  assert is_secops_tool_enabled(delete_feed_tool) is False
+  assert is_secops_tool_enabled(create_feed_tool) is False
 
 
 def test_adk_v2_tool_error_callback_and_confirmation(
