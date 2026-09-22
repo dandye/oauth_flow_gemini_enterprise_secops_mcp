@@ -141,7 +141,9 @@ def deploy(
           "SECOPS_USE_INTERACTIONS_API": "true",
       }
       existing_envs = {
-          e.name: e for e in existing_engine.spec.deployment_spec.env
+          e.name: e
+          for e in existing_engine.spec.deployment_spec.env
+          if e.name != "ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL"
       }
       for k, v in env_vars_to_add.items():
         existing_envs[k] = aiplatform_v1beta1.EnvVar(name=k, value=v)
@@ -271,7 +273,9 @@ def update(
           "SECOPS_USE_INTERACTIONS_API": "true",
       }
       existing_envs = {
-          e.name: e for e in existing_engine.spec.deployment_spec.env
+          e.name: e
+          for e in existing_engine.spec.deployment_spec.env
+          if e.name != "ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL"
       }
       for k, v in env_vars_to_add.items():
         existing_envs[k] = aiplatform_v1beta1.EnvVar(name=k, value=v)
