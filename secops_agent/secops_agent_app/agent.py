@@ -286,6 +286,7 @@ def create_agent() -> Agent:
       model=Gemini(
           model="gemini-2.5-pro",
           use_interactions_api=False,
+          client_kwargs={"location": "global"},
           retry_options=types.HttpRetryOptions(attempts=3),
       ),
       static_instruction=STATIC_SECOPS_INSTRUCTION,

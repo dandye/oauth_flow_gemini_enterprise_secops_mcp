@@ -64,6 +64,7 @@ def get_env_vars():
       "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
       "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
       "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT": "32768",
+      "GOOGLE_CLOUD_LOCATION": "global",
       "SECOPS_USE_INTERACTIONS_API": "false",
   }
   # Remove None values
@@ -138,6 +139,7 @@ def deploy(
           "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
           "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
           "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT": "32768",
+          "GOOGLE_CLOUD_LOCATION": "global",
           "SECOPS_USE_INTERACTIONS_API": "false",
       }
       existing_envs = {
@@ -270,6 +272,7 @@ def update(
           "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
           "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
           "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT": "32768",
+          "GOOGLE_CLOUD_LOCATION": "global",
           "SECOPS_USE_INTERACTIONS_API": "false",
       }
       existing_envs = {
@@ -347,6 +350,7 @@ def tag_as_adk(
         "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
         "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT": "32768",
+        "GOOGLE_CLOUD_LOCATION": "global",
         "SECOPS_USE_INTERACTIONS_API": "false",
     }
     existing_envs = {
