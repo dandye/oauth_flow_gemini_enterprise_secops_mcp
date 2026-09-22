@@ -3,6 +3,10 @@
 from types import SimpleNamespace
 
 import pytest
+from google.adk.models.interactions_utils import (
+    convert_tools_config_to_interactions_format,
+)
+from google.genai import types
 from typer.testing import CliRunner
 
 from oauth_flow_gemini_enterprise_secops_mcp.cli import app
@@ -103,37 +107,88 @@ def test_adk_v2_create_app_and_agent_features(
 
 def test_disabled_feed_tools(monkeypatch: pytest.MonkeyPatch) -> None:
   monkeypatch.setenv("REASONING_ENGINE_DEPLOYMENT", "True")
-  assert "create_feed" in DISABLED_SECOPS_TOOLS
-  assert "update_feed" in DISABLED_SECOPS_TOOLS
+  expected_disabled = {
+      "create_feed",
+      "update_feed",
+      "run_parser",
+      "list_feeds",
+      "get_feed",
+      "disable_feed",
+      "enable_feed",
+  }
+  assert DISABLED_SECOPS_TOOLS == expected_disabled
 
   create_feed_tool = SimpleNamespace(name="create_feed")
   update_feed_tool = SimpleNamespace(name="update_feed")
+  run_parser_tool = SimpleNamespace(name="run_parser")
   list_feeds_tool = SimpleNamespace(name="list_feeds")
+  udm_search_tool = SimpleNamespace(name="udm_search")
 
-  assert is_secops_tool_enabled(create_feed_tool) is False
-  assert is_secops_tool_enabled(update_feed_tool) is False
-  assert is_secops_tool_enabled(list_feeds_tool) is True
+  for disabled_tool in (
+      create_feed_tool,
+      update_feed_tool,
+      run_parser_tool,
+      list_feeds_tool,
+  ):
+    assert is_secops_tool_enabled(disabled_tool) is False
+  assert is_secops_tool_enabled(udm_search_tool) is True
 
   agent = create_agent()
+  assert agent.model.use_interactions_api is True
   mcp_toolset = agent.tools[0]
   assert mcp_toolset._is_tool_selected(create_feed_tool, None) is False
   assert mcp_toolset._is_tool_selected(update_feed_tool, None) is False
-  assert mcp_toolset._is_tool_selected(list_feeds_tool, None) is True
+  assert mcp_toolset._is_tool_selected(run_parser_tool, None) is False
+  assert mcp_toolset._is_tool_selected(list_feeds_tool, None) is False
+  assert mcp_toolset._is_tool_selected(udm_search_tool, None) is True
 
   fake_ctx = SimpleNamespace(
       tool_confirmation=None,
       actions=SimpleNamespace(skip_summarization=False),
   )
-  for disabled_tool in (create_feed_tool, update_feed_tool):
+  for disabled_tool in (create_feed_tool, update_feed_tool, run_parser_tool):
     resp = confirm_destructive_secops_tool(disabled_tool, {}, fake_ctx)
     assert resp is not None
     assert resp["status"] == "disabled"
     assert resp["tool"] == disabled_tool.name
 
-  monkeypatch.setenv("SECOPS_DISABLED_TOOLS", "delete_feed, disable_feed")
+  monkeypatch.setenv("SECOPS_DISABLED_TOOLS", "delete_feed")
   delete_feed_tool = SimpleNamespace(name="delete_feed")
   assert is_secops_tool_enabled(delete_feed_tool) is False
   assert is_secops_tool_enabled(create_feed_tool) is False
+
+
+def test_case_a_interactions_api_schema_handling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  monkeypatch.setenv("REASONING_ENGINE_DEPLOYMENT", "True")
+  monkeypatch.setenv("ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL", "true")
+  agent = create_agent()
+  assert agent.model.use_interactions_api is True
+
+  func_decl = types.FunctionDeclaration(
+      name="udm_search",
+      description="Search Chronicle UDM events.",
+      parameters_json_schema={
+          "type": "object",
+          "properties": {"query": {"type": "string"}},
+          "required": ["query"],
+      },
+      response_json_schema={
+          "type": "object",
+          "properties": {"events": {"type": "array"}},
+      },
+  )
+  config = types.GenerateContentConfig(
+      tools=[types.Tool(function_declarations=[func_decl])]
+  )
+  interactions_tools = convert_tools_config_to_interactions_format(config)
+  assert len(interactions_tools) == 1
+  tool_param = interactions_tools[0]
+  assert tool_param["name"] == "udm_search"
+  assert tool_param["parameters"]["type"] == "object"
+  assert "response_json_schema" not in tool_param
+  assert "response" not in tool_param
 
 
 def test_adk_v2_tool_error_callback_and_confirmation(

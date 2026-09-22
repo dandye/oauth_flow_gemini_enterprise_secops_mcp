@@ -64,7 +64,7 @@ def get_env_vars():
       "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
       "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
       "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT": "32768",
-      "ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL": "true",
+      "SECOPS_USE_INTERACTIONS_API": "true",
   }
   # Remove None values
   return {k: v for k, v in env_vars.items() if v is not None}
@@ -138,7 +138,7 @@ def deploy(
           "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
           "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
           "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT": "32768",
-          "ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL": "true",
+          "SECOPS_USE_INTERACTIONS_API": "true",
       }
       existing_envs = {
           e.name: e for e in existing_engine.spec.deployment_spec.env
@@ -268,7 +268,7 @@ def update(
           "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
           "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
           "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT": "32768",
-          "ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL": "true",
+          "SECOPS_USE_INTERACTIONS_API": "true",
       }
       existing_envs = {
           e.name: e for e in existing_engine.spec.deployment_spec.env
@@ -343,7 +343,7 @@ def tag_as_adk(
         "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
         "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT": "32768",
-        "ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL": "true",
+        "SECOPS_USE_INTERACTIONS_API": "true",
     }
     existing_envs = {
         e.name: e for e in existing_engine.spec.deployment_spec.env

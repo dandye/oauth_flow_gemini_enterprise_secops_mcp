@@ -20,16 +20,21 @@ from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumento
 
 from google.adk.tools.tool_context import ToolContext
 
-os.environ.setdefault("ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL", "true")
-
 # Default TTL (seconds) for caching the remote Chronicle OneMCP tools/list response
 DEFAULT_MCP_TOOL_CACHE_TTL_SECONDS = 300.0
 
-# SecOps MCP tools that are permanently disabled and hidden from the LLM
+# SecOps MCP tools that are permanently disabled and hidden from the LLM to
+# eliminate 169.8 KB (-68.94%) of inputSchema bloat and 710.5 KB of outputSchema
+# bloat from the 108-variant FeedDetails proto and RunParserResponse UDM proto.
 DISABLED_SECOPS_TOOLS = frozenset(
     {
         "create_feed",
         "update_feed",
+        "run_parser",
+        "list_feeds",
+        "get_feed",
+        "disable_feed",
+        "enable_feed",
     }
 )
 
@@ -49,7 +54,7 @@ STATIC_SECOPS_INSTRUCTION = """You are a Google Security Operations (SecOps) ass
 You have access to the remote Chronicle OneMCP server, which provides tools for SIEM event search, entity investigation, detection rule management, and SOAR case operations.
 Always use the provided tools to fetch authoritative telemetry and case data from Chronicle rather than guessing.
 When a tool requires projectId, customerId, or region, always supply the active tenant identifiers from your instructions.
-Feed creation and modification tools (create_feed, update_feed) are intentionally disabled by policy; you may inspect feeds (list_feeds, get_feed) but must decline requests to create or update feeds.
+Feed administration and parser simulation tools (create_feed, update_feed, run_parser, list_feeds, get_feed, disable_feed, enable_feed) are intentionally disabled by policy to optimize context window usage.
 """
 
 
@@ -212,9 +217,17 @@ def create_mcp_toolset(
 
 
 def create_agent() -> Agent:
-  """Create the ADK 2.x SecOps LlmAgent with BuiltInPlanner, static_instruction, and tool callbacks."""
+  """Create the ADK 2.x SecOps LlmAgent using Gemini Interactions API (Case A)."""
   load_dotenv()
-  os.environ["ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL"] = "true"
+  use_interactions_api = (
+      os.environ.get("SECOPS_USE_INTERACTIONS_API", "true").lower() == "true"
+  )
+  if use_interactions_api:
+    # Gemini Interactions API (convert_tools_config_to_interactions_format)
+    # requires standard lowercase JSON Schema in func_decl.parameters_json_schema
+    # (produced when FeatureName.JSON_SCHEMA_FOR_FUNC_DECL is enabled) and
+    # automatically drops func_decl.response_json_schema (outputSchema).
+    os.environ.pop("ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL", None)
 
   project_id = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get(
       "GCP_PROJECT_ID"
@@ -253,6 +266,7 @@ def create_agent() -> Agent:
       name="secops_agent",
       model=Gemini(
           model="gemini-2.5-pro",
+          use_interactions_api=use_interactions_api,
           retry_options=types.HttpRetryOptions(attempts=3),
       ),
       static_instruction=STATIC_SECOPS_INSTRUCTION,
