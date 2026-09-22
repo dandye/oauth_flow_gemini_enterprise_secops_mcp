@@ -130,6 +130,11 @@ def test_disabled_feed_tools(monkeypatch: pytest.MonkeyPatch) -> None:
     assert resp["status"] == "disabled"
     assert resp["tool"] == disabled_tool.name
 
+  monkeypatch.setenv("SECOPS_DISABLED_TOOLS", "delete_feed, disable_feed")
+  delete_feed_tool = SimpleNamespace(name="delete_feed")
+  assert is_secops_tool_enabled(delete_feed_tool) is False
+  assert is_secops_tool_enabled(create_feed_tool) is False
+
 
 def test_adk_v2_tool_error_callback_and_confirmation(
     monkeypatch: pytest.MonkeyPatch,

@@ -49,7 +49,15 @@ STATIC_SECOPS_INSTRUCTION = """You are a Google Security Operations (SecOps) ass
 You have access to the remote Chronicle OneMCP server, which provides tools for SIEM event search, entity investigation, detection rule management, and SOAR case operations.
 Always use the provided tools to fetch authoritative telemetry and case data from Chronicle rather than guessing.
 When a tool requires projectId, customerId, or region, always supply the active tenant identifiers from your instructions.
+Feed creation and modification tools (create_feed, update_feed) are intentionally disabled by policy; you may inspect feeds (list_feeds, get_feed) but must decline requests to create or update feeds.
 """
+
+
+def get_disabled_secops_tools() -> frozenset[str]:
+  """Return the set of disabled SecOps MCP tools (always including DISABLED_SECOPS_TOOLS plus any SECOPS_DISABLED_TOOLS env entries)."""
+  extra_raw = os.environ.get("SECOPS_DISABLED_TOOLS", "")
+  extra = {t.strip() for t in extra_raw.split(",") if t.strip()}
+  return DISABLED_SECOPS_TOOLS | extra
 
 
 def is_secops_tool_enabled(
@@ -58,7 +66,7 @@ def is_secops_tool_enabled(
   """Filter predicate passed to McpToolset(tool_filter=...) to exclude disabled SecOps tools."""
   del readonly_context
   tool_name = getattr(tool, "name", "")
-  return tool_name not in DISABLED_SECOPS_TOOLS
+  return tool_name not in get_disabled_secops_tools()
 
 
 def _requires_tool_confirmation(tool_name: str = "", **_: Any) -> bool:
@@ -79,7 +87,7 @@ def confirm_destructive_secops_tool(
 ) -> dict[str, Any] | None:
   """ADK 2.x before_tool_callback blocking disabled tools and enforcing HITL confirmation on destructive tools."""
   tool_name = getattr(tool, "name", "")
-  if tool_name in DISABLED_SECOPS_TOOLS:
+  if tool_name in get_disabled_secops_tools():
     return {
         "status": "disabled",
         "tool": tool_name,
