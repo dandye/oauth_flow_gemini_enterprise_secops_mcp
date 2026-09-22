@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 import pytest
+from google.genai import types
 from typer.testing import CliRunner
 
 from oauth_flow_gemini_enterprise_secops_mcp.cli import app
@@ -16,6 +17,7 @@ from secops_agent.secops_agent_app.agent import create_app
 from secops_agent.secops_agent_app.agent import get_secops_headers
 from secops_agent.secops_agent_app.agent import handle_secops_tool_error
 from secops_agent.secops_agent_app.agent import is_secops_tool_enabled
+from secops_agent.secops_agent_app.agent import strip_mcp_output_schemas
 
 runner = CliRunner()
 
@@ -103,37 +105,94 @@ def test_adk_v2_create_app_and_agent_features(
 
 def test_disabled_feed_tools(monkeypatch: pytest.MonkeyPatch) -> None:
   monkeypatch.setenv("REASONING_ENGINE_DEPLOYMENT", "True")
-  assert "create_feed" in DISABLED_SECOPS_TOOLS
-  assert "update_feed" in DISABLED_SECOPS_TOOLS
+  expected_disabled = {
+      "create_feed",
+      "update_feed",
+      "run_parser",
+      "list_feeds",
+      "get_feed",
+      "disable_feed",
+      "enable_feed",
+  }
+  assert DISABLED_SECOPS_TOOLS == expected_disabled
 
   create_feed_tool = SimpleNamespace(name="create_feed")
   update_feed_tool = SimpleNamespace(name="update_feed")
+  run_parser_tool = SimpleNamespace(name="run_parser")
   list_feeds_tool = SimpleNamespace(name="list_feeds")
+  udm_search_tool = SimpleNamespace(name="udm_search")
 
-  assert is_secops_tool_enabled(create_feed_tool) is False
-  assert is_secops_tool_enabled(update_feed_tool) is False
-  assert is_secops_tool_enabled(list_feeds_tool) is True
+  for disabled_tool in (
+      create_feed_tool,
+      update_feed_tool,
+      run_parser_tool,
+      list_feeds_tool,
+  ):
+    assert is_secops_tool_enabled(disabled_tool) is False
+  assert is_secops_tool_enabled(udm_search_tool) is True
 
   agent = create_agent()
+  assert agent.model.use_interactions_api is False
+  assert agent.before_model_callback is strip_mcp_output_schemas
   mcp_toolset = agent.tools[0]
   assert mcp_toolset._is_tool_selected(create_feed_tool, None) is False
   assert mcp_toolset._is_tool_selected(update_feed_tool, None) is False
-  assert mcp_toolset._is_tool_selected(list_feeds_tool, None) is True
+  assert mcp_toolset._is_tool_selected(run_parser_tool, None) is False
+  assert mcp_toolset._is_tool_selected(list_feeds_tool, None) is False
+  assert mcp_toolset._is_tool_selected(udm_search_tool, None) is True
 
   fake_ctx = SimpleNamespace(
       tool_confirmation=None,
       actions=SimpleNamespace(skip_summarization=False),
   )
-  for disabled_tool in (create_feed_tool, update_feed_tool):
+  for disabled_tool in (create_feed_tool, update_feed_tool, run_parser_tool):
     resp = confirm_destructive_secops_tool(disabled_tool, {}, fake_ctx)
     assert resp is not None
     assert resp["status"] == "disabled"
     assert resp["tool"] == disabled_tool.name
 
-  monkeypatch.setenv("SECOPS_DISABLED_TOOLS", "delete_feed, disable_feed")
+  monkeypatch.setenv("SECOPS_DISABLED_TOOLS", "delete_feed")
   delete_feed_tool = SimpleNamespace(name="delete_feed")
   assert is_secops_tool_enabled(delete_feed_tool) is False
   assert is_secops_tool_enabled(create_feed_tool) is False
+
+
+def test_case_b_generate_content_strip_output_schemas(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  monkeypatch.setenv("REASONING_ENGINE_DEPLOYMENT", "True")
+  monkeypatch.setenv("ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL", "true")
+  agent = create_agent()
+  assert agent.model.use_interactions_api is False
+  assert agent.before_model_callback is strip_mcp_output_schemas
+
+  func_decl = types.FunctionDeclaration(
+      name="udm_search",
+      description="Search Chronicle UDM events.",
+      parameters_json_schema={
+          "type": "object",
+          "properties": {"query": {"type": "string"}},
+          "required": ["query"],
+      },
+      response_json_schema={
+          "type": "object",
+          "properties": {"events": {"type": "array"}},
+      },
+  )
+  fake_llm_request = SimpleNamespace(
+      config=types.GenerateContentConfig(
+          tools=[types.Tool(function_declarations=[func_decl])]
+      )
+  )
+  strip_mcp_output_schemas(None, fake_llm_request)
+  cleaned_fd = fake_llm_request.config.tools[0].function_declarations[0]
+  assert cleaned_fd.parameters_json_schema == {
+      "type": "object",
+      "properties": {"query": {"type": "string"}},
+      "required": ["query"],
+  }
+  assert cleaned_fd.response_json_schema is None
+  assert cleaned_fd.response is None
 
 
 def test_adk_v2_tool_error_callback_and_confirmation(

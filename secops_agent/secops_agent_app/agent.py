@@ -20,16 +20,21 @@ from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumento
 
 from google.adk.tools.tool_context import ToolContext
 
-os.environ.setdefault("ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL", "true")
-
 # Default TTL (seconds) for caching the remote Chronicle OneMCP tools/list response
 DEFAULT_MCP_TOOL_CACHE_TTL_SECONDS = 300.0
 
-# SecOps MCP tools that are permanently disabled and hidden from the LLM
+# SecOps MCP tools that are permanently disabled and hidden from the LLM to
+# eliminate 169.8 KB (-68.94%) of inputSchema bloat and 710.5 KB of outputSchema
+# bloat from the 108-variant FeedDetails proto and RunParserResponse UDM proto.
 DISABLED_SECOPS_TOOLS = frozenset(
     {
         "create_feed",
         "update_feed",
+        "run_parser",
+        "list_feeds",
+        "get_feed",
+        "disable_feed",
+        "enable_feed",
     }
 )
 
@@ -49,8 +54,20 @@ STATIC_SECOPS_INSTRUCTION = """You are a Google Security Operations (SecOps) ass
 You have access to the remote Chronicle OneMCP server, which provides tools for SIEM event search, entity investigation, detection rule management, and SOAR case operations.
 Always use the provided tools to fetch authoritative telemetry and case data from Chronicle rather than guessing.
 When a tool requires projectId, customerId, or region, always supply the active tenant identifiers from your instructions.
-Feed creation and modification tools (create_feed, update_feed) are intentionally disabled by policy; you may inspect feeds (list_feeds, get_feed) but must decline requests to create or update feeds.
+Feed administration and parser simulation tools (create_feed, update_feed, run_parser, list_feeds, get_feed, disable_feed, enable_feed) are intentionally disabled by policy to optimize context window usage.
 """
+
+
+def strip_mcp_output_schemas(callback_context: Any, llm_request: Any) -> None:
+  """ADK 2.x before_model_callback stripping 3.73 MB of MCP outputSchema on generate_content while preserving parameters_json_schema."""
+  del callback_context
+  config = getattr(llm_request, "config", None)
+  if not config:
+    return
+  for tool in getattr(config, "tools", None) or []:
+    for fd in getattr(tool, "function_declarations", None) or []:
+      fd.response_json_schema = None
+      fd.response = None
 
 
 def get_disabled_secops_tools() -> frozenset[str]:
@@ -212,9 +229,13 @@ def create_mcp_toolset(
 
 
 def create_agent() -> Agent:
-  """Create the ADK 2.x SecOps LlmAgent with BuiltInPlanner, static_instruction, and tool callbacks."""
+  """Create the ADK 2.x SecOps LlmAgent using generate_content + strip_mcp_output_schemas (Case B)."""
   load_dotenv()
-  os.environ["ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL"] = "true"
+  # Keep FeatureName.JSON_SCHEMA_FOR_FUNC_DECL enabled (default) so
+  # FunctionDeclaration.parameters_json_schema preserves lossless JSON Schema
+  # ($defs/$ref), while strip_mcp_output_schemas removes response_json_schema
+  # (3.02 MB of remaining outputSchema) before each generate_content call.
+  os.environ.pop("ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL", None)
 
   project_id = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get(
       "GCP_PROJECT_ID"
@@ -253,6 +274,7 @@ def create_agent() -> Agent:
       name="secops_agent",
       model=Gemini(
           model="gemini-2.5-pro",
+          use_interactions_api=False,
           retry_options=types.HttpRetryOptions(attempts=3),
       ),
       static_instruction=STATIC_SECOPS_INSTRUCTION,
@@ -271,6 +293,7 @@ def create_agent() -> Agent:
           )
       ),
       tools=[secops_toolset],
+      before_model_callback=strip_mcp_output_schemas,
       before_tool_callback=confirm_destructive_secops_tool,
       on_tool_error_callback=handle_secops_tool_error,
   )
