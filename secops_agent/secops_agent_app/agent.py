@@ -209,86 +209,12 @@ class EventLoopSafeGemini(Gemini):
     return super().api_client
 
 
-def _extract_user_oauth_token(
-    state: Any, gemini_auth_id: str | None
-) -> str | None:
-  """Extract user OAuth access token from ADK session state (including AdkApp temp: keys)."""
-  if state is None:
-    return None
-
-  oauth_auth_id = os.environ.get("OAUTH_AUTH_ID")
-  candidate_keys: list[str] = []
-  for raw_id in (
-      gemini_auth_id,
-      oauth_auth_id,
-      "testing-argolis_1775243150544",
-      "gement-onemcp-auth-passthrough-argolis-v1",
-  ):
-    if raw_id:
-      for candidate in (f"temp:{raw_id}", raw_id):
-        if candidate not in candidate_keys:
-          candidate_keys.append(candidate)
-
-  for key in candidate_keys:
-    try:
-      val = state.get(key)
-    except Exception:
-      val = None
-    if isinstance(val, str) and val.strip():
-      logging.info(
-          "DEBUG: Tool Call Auth Header resolved from key '%s' (starts with:"
-          " %s...)",
-          key,
-          val[:10],
-      )
-      return val.strip()
-    if isinstance(val, dict) and isinstance(val.get("access_token"), str):
-      token = val["access_token"].strip()
-      if token:
-        logging.info(
-            "DEBUG: Tool Call Auth Header resolved from dict key '%s' (starts"
-            " with: %s...)",
-            key,
-            token[:10],
-        )
-        return token
-
-  # Fallback: inspect state dictionary for any ephemeral temp:* or authorization keys
-  state_dict: dict[str, Any] = {}
-  if hasattr(state, "to_dict") and callable(state.to_dict):
-    try:
-      state_dict = state.to_dict() or {}
-    except Exception:
-      state_dict = {}
-  elif isinstance(state, dict):
-    state_dict = state
-
-  if state_dict:
-    logging.info(
-        "DEBUG: Available session state keys: %s", list(state_dict.keys())
-    )
-    for key, val in state_dict.items():
-      if key.startswith("temp:") or "auth" in key.lower():
-        if isinstance(val, str) and len(val.strip()) > 20:
-          logging.info(
-              "DEBUG: Tool Call Auth Header resolved via fallback key '%s'"
-              " (starts with: %s...)",
-              key,
-              val[:10],
-          )
-          return val.strip()
-        if isinstance(val, dict) and isinstance(val.get("access_token"), str):
-          token = val["access_token"].strip()
-          if token:
-            return token
-
-  return None
-
-
 def get_secops_headers(context: Any) -> dict[str, str]:
   """Build HTTP headers for Chronicle OneMCP requests with OAuth token passthrough."""
   chronicle_project_id = os.environ.get("CHRONICLE_PROJECT_ID")
-  gemini_auth_id = os.environ.get("GEMINI_AUTHORIZATION_ID")
+  auth_id = os.environ.get("GEMINI_AUTHORIZATION_ID") or os.environ.get(
+      "OAUTH_AUTH_ID"
+  )
 
   headers = {"Accept": "text/event-stream", "Content-Type": "application/json"}
 
@@ -300,8 +226,12 @@ def get_secops_headers(context: Any) -> dict[str, str]:
         " *will* fail without a routing context."
     )
 
-  state = getattr(context, "state", None) if context else None
-  user_token = _extract_user_oauth_token(state, gemini_auth_id)
+  user_token = None
+  if auth_id and context and getattr(context, "state", None):
+    user_token = context.state.get(f"temp:{auth_id}") or context.state.get(
+        auth_id
+    )
+
   if user_token:
     headers["Authorization"] = f"Bearer {user_token}"
   else:
