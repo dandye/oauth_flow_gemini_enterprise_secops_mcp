@@ -33,7 +33,16 @@ app = typer.Typer(help="Manage OneMCP SecOps Agent Engine instances.")
 
 def setup_vertex_ai():
   """Initialize Vertex AI from environment."""
+  from pathlib import Path
+
   load_dotenv()
+  local_adc = Path.cwd() / ".gcloud" / "application_default_credentials.json"
+  if (
+      not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+      and local_adc.exists()
+  ):
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(local_adc)
+
   project = os.environ.get("GCP_PROJECT_ID")
   location = os.environ.get("GCP_LOCATION", "us-central1")
   staging_bucket = os.environ.get("GCP_STAGING_BUCKET")
@@ -53,18 +62,22 @@ def setup_vertex_ai():
 
 def get_env_vars():
   """Collect environment variables for injection."""
+  auth_id = os.environ.get("OAUTH_AUTH_ID") or os.environ.get(
+      "GEMINI_AUTHORIZATION_ID"
+  )
   env_vars = {
       "CHRONICLE_PROJECT_ID": os.environ.get("CHRONICLE_PROJECT_ID"),
       "CHRONICLE_CUSTOMER_ID": os.environ.get("CHRONICLE_CUSTOMER_ID"),
       "CHRONICLE_REGION": os.environ.get("CHRONICLE_REGION"),
-      "GEMINI_AUTHORIZATION_ID": os.environ.get("GEMINI_AUTHORIZATION_ID"),
-      "OAUTH_AUTH_ID": os.environ.get("OAUTH_AUTH_ID"),
+      "GEMINI_AUTHORIZATION_ID": auth_id,
+      "OAUTH_AUTH_ID": auth_id,
       "GCP_PROJECT_ID": os.environ.get("GCP_PROJECT_ID"),
       "DEBUG": os.environ.get("DEBUG", "False"),
       "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
       "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
       "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT": "32768",
-      "ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL": "true",
+      "GOOGLE_CLOUD_LOCATION": "global",
+      "SECOPS_USE_INTERACTIONS_API": "true",
   }
   # Remove None values
   return {k: v for k, v in env_vars.items() if v is not None}
@@ -138,10 +151,13 @@ def deploy(
           "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
           "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
           "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT": "32768",
-          "ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL": "true",
+          "GOOGLE_CLOUD_LOCATION": "global",
+          "SECOPS_USE_INTERACTIONS_API": "true",
       }
       existing_envs = {
-          e.name: e for e in existing_engine.spec.deployment_spec.env
+          e.name: e
+          for e in existing_engine.spec.deployment_spec.env
+          if e.name != "ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL"
       }
       for k, v in env_vars_to_add.items():
         existing_envs[k] = aiplatform_v1beta1.EnvVar(name=k, value=v)
@@ -268,10 +284,13 @@ def update(
           "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
           "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
           "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT": "32768",
-          "ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL": "true",
+          "GOOGLE_CLOUD_LOCATION": "global",
+          "SECOPS_USE_INTERACTIONS_API": "true",
       }
       existing_envs = {
-          e.name: e for e in existing_engine.spec.deployment_spec.env
+          e.name: e
+          for e in existing_engine.spec.deployment_spec.env
+          if e.name != "ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL"
       }
       for k, v in env_vars_to_add.items():
         existing_envs[k] = aiplatform_v1beta1.EnvVar(name=k, value=v)
@@ -343,7 +362,8 @@ def tag_as_adk(
         "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
         "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT": "32768",
-        "ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL": "true",
+        "GOOGLE_CLOUD_LOCATION": "global",
+        "SECOPS_USE_INTERACTIONS_API": "true",
     }
     existing_envs = {
         e.name: e for e in existing_engine.spec.deployment_spec.env
