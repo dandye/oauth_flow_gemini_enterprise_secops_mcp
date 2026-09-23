@@ -1,6 +1,11 @@
+import asyncio
 import logging
 import os
+import weakref
 from typing import Any
+
+import google.auth
+import google.auth.transport.requests
 from dotenv import load_dotenv
 from google.adk.agents import Agent
 from google.adk.agents.context import Context
@@ -13,13 +18,10 @@ from google.adk.planners import BuiltInPlanner
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.mcp_tool import McpToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
-import google.auth
-import google.auth.transport.requests
-from google.genai import types
-from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumentor
-
 from google.adk.tools.tool_context import ToolContext
+from google.genai import types
 from mcp.client.session import ClientSession
+from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumentor
 
 
 async def _bypass_mcp_output_schema_validation(
@@ -178,6 +180,111 @@ def handle_secops_tool_error(
   }
 
 
+class EventLoopSafeGemini(Gemini):
+  """Gemini LLM wrapper that recreates api_client when the asyncio event loop changes.
+
+  In Vertex AI Reasoning Engine (AdkApp), each request can execute on a fresh
+  asyncio event loop while the root Agent and its Gemini model instance are
+  reused across turns. Recreating the cached google.genai.Client when the
+  previous loop has closed prevents httpcore.AsyncConnectionPool from raising
+  RuntimeError('Event loop is closed').
+  """
+
+  _last_loop_ref: Any = None
+
+  @property
+  def api_client(self) -> Any:
+    try:
+      loop = asyncio.get_running_loop()
+    except RuntimeError:
+      loop = None
+    if loop is not None:
+      prev_loop = (
+          self._last_loop_ref() if callable(self._last_loop_ref) else None
+      )
+      if prev_loop is not loop or prev_loop.is_closed():
+        self.__dict__.pop("api_client", None)
+        self.__dict__.pop("_live_api_client", None)
+        self._last_loop_ref = weakref.ref(loop)
+    return super().api_client
+
+
+def _extract_user_oauth_token(
+    state: Any, gemini_auth_id: str | None
+) -> str | None:
+  """Extract user OAuth access token from ADK session state (including AdkApp temp: keys)."""
+  if state is None:
+    return None
+
+  oauth_auth_id = os.environ.get("OAUTH_AUTH_ID")
+  candidate_keys: list[str] = []
+  for raw_id in (
+      gemini_auth_id,
+      oauth_auth_id,
+      "testing-argolis_1775243150544",
+      "gement-onemcp-auth-passthrough-argolis-v1",
+  ):
+    if raw_id:
+      for candidate in (f"temp:{raw_id}", raw_id):
+        if candidate not in candidate_keys:
+          candidate_keys.append(candidate)
+
+  for key in candidate_keys:
+    try:
+      val = state.get(key)
+    except Exception:
+      val = None
+    if isinstance(val, str) and val.strip():
+      logging.info(
+          "DEBUG: Tool Call Auth Header resolved from key '%s' (starts with:"
+          " %s...)",
+          key,
+          val[:10],
+      )
+      return val.strip()
+    if isinstance(val, dict) and isinstance(val.get("access_token"), str):
+      token = val["access_token"].strip()
+      if token:
+        logging.info(
+            "DEBUG: Tool Call Auth Header resolved from dict key '%s' (starts"
+            " with: %s...)",
+            key,
+            token[:10],
+        )
+        return token
+
+  # Fallback: inspect state dictionary for any ephemeral temp:* or authorization keys
+  state_dict: dict[str, Any] = {}
+  if hasattr(state, "to_dict") and callable(state.to_dict):
+    try:
+      state_dict = state.to_dict() or {}
+    except Exception:
+      state_dict = {}
+  elif isinstance(state, dict):
+    state_dict = state
+
+  if state_dict:
+    logging.info(
+        "DEBUG: Available session state keys: %s", list(state_dict.keys())
+    )
+    for key, val in state_dict.items():
+      if key.startswith("temp:") or "auth" in key.lower():
+        if isinstance(val, str) and len(val.strip()) > 20:
+          logging.info(
+              "DEBUG: Tool Call Auth Header resolved via fallback key '%s'"
+              " (starts with: %s...)",
+              key,
+              val[:10],
+          )
+          return val.strip()
+        if isinstance(val, dict) and isinstance(val.get("access_token"), str):
+          token = val["access_token"].strip()
+          if token:
+            return token
+
+  return None
+
+
 def get_secops_headers(context: Any) -> dict[str, str]:
   """Build HTTP headers for Chronicle OneMCP requests with OAuth token passthrough."""
   chronicle_project_id = os.environ.get("CHRONICLE_PROJECT_ID")
@@ -193,17 +300,11 @@ def get_secops_headers(context: Any) -> dict[str, str]:
         " *will* fail without a routing context."
     )
 
-  user_token = None
-  if context and getattr(context, "state", None) and gemini_auth_id:
-    user_token = context.state.get(gemini_auth_id)
-    if user_token:
-      headers["Authorization"] = f"Bearer {user_token}"
-      logging.info(
-          "DEBUG: Tool Call Auth Header present (starts with: %s...)",
-          user_token[:10],
-      )
-
-  if not user_token:
+  state = getattr(context, "state", None) if context else None
+  user_token = _extract_user_oauth_token(state, gemini_auth_id)
+  if user_token:
+    headers["Authorization"] = f"Bearer {user_token}"
+  else:
     try:
       creds, _ = google.auth.default(
           scopes=["https://www.googleapis.com/auth/cloud-platform"]
@@ -221,7 +322,7 @@ def create_mcp_toolset(
     region: str,
     tool_list_cache_ttl_seconds: float = DEFAULT_MCP_TOOL_CACHE_TTL_SECONDS,
 ) -> McpToolset:
-  """Create an ADK 2.x McpToolset with tool-list caching for Chronicle OneMCP."""
+  """Create an ADK 2.x McpToolset with tool-list caching and event-loop-safe session pooling."""
   secops_mcp_url = f"https://chronicle.{region}.rep.googleapis.com/mcp"
   logging.info(
       "Initializing ADK 2.x McpToolset with URL: %s (cache TTL: %ss)",
@@ -229,14 +330,38 @@ def create_mcp_toolset(
       tool_list_cache_ttl_seconds,
   )
 
-  return McpToolset(
+  toolset_ref: list[McpToolset] = []
+  last_loop_ref: list[Any] = [None]
+
+  def _loop_safe_header_provider(context: Any) -> dict[str, str]:
+    try:
+      loop = asyncio.get_running_loop()
+    except RuntimeError:
+      loop = None
+    if loop is not None and toolset_ref:
+      prev_loop = last_loop_ref[0]() if callable(last_loop_ref[0]) else None
+      if prev_loop is not loop or prev_loop.is_closed():
+        session_mgr = getattr(toolset_ref[0], "_mcp_session_manager", None)
+        sessions = getattr(session_mgr, "_sessions", None)
+        if isinstance(sessions, dict) and sessions:
+          logging.info(
+              "Clearing %d pooled MCP session(s) from closed event loop",
+              len(sessions),
+          )
+          sessions.clear()
+        last_loop_ref[0] = weakref.ref(loop)
+    return get_secops_headers(context)
+
+  toolset = McpToolset(
       connection_params=StreamableHTTPConnectionParams(url=secops_mcp_url),
-      header_provider=get_secops_headers,
+      header_provider=_loop_safe_header_provider,
       tool_filter=is_secops_tool_enabled,
       tool_list_cache_ttl_seconds=tool_list_cache_ttl_seconds,
       use_mcp_resources=False,
       errlog=None,  # explicitly None to prevent sys.stderr capturing (which cannot be pickled)
   )
+  toolset_ref.append(toolset)
+  return toolset
 
 
 def create_agent() -> Agent:
@@ -283,7 +408,7 @@ def create_agent() -> Agent:
 
   return Agent(
       name="secops_agent",
-      model=Gemini(
+      model=EventLoopSafeGemini(
           model="gemini-2.5-pro",
           use_interactions_api=False,
           client_kwargs={"location": "global"},
