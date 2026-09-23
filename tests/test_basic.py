@@ -74,6 +74,12 @@ def test_get_secops_headers_with_oauth_token(
   assert headers["Authorization"] == "Bearer test-oauth-bearer-token-12345"
   assert headers["Accept"] == "text/event-stream"
 
+  temp_context = SimpleNamespace(
+      state={"temp:test-auth-id": "temp-oauth-bearer-token-67890"}
+  )
+  temp_headers = get_secops_headers(temp_context)
+  assert temp_headers["Authorization"] == "Bearer temp-oauth-bearer-token-67890"
+
 
 def test_adk_v2_create_app_and_agent_features(
     monkeypatch: pytest.MonkeyPatch,
