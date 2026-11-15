@@ -98,7 +98,15 @@ class VertexAIManager:
         "1. Checking environment variables...", fg=typer.colors.CYAN, bold=True
     )
     if not self._check_env_vars():
-      all_passed = False
+      typer.echo()
+      typer.secho("=" * 80, fg=typer.colors.BLUE)
+      typer.secho("[ERROR] Some checks failed", fg=typer.colors.RED, bold=True)
+      typer.secho(
+          "Please fix the issues above before proceeding.", fg=typer.colors.RED
+      )
+      typer.secho("=" * 80, fg=typer.colors.BLUE)
+      typer.echo()
+      return False
     typer.echo()
 
     # Check 2: Authentication
@@ -141,7 +149,8 @@ class VertexAIManager:
       typer.secho(
           "6. Checking IAM permissions...", fg=typer.colors.CYAN, bold=True
       )
-      self._check_permissions()  # Informational check
+      if not self._check_permissions():
+        all_passed = False
       typer.echo()
 
     # Final summary
@@ -366,11 +375,15 @@ class VertexAIManager:
       )
       policy = projects_client.get_iam_policy(request=request)
 
+      member_prefix: str | None = None
       member_identifiers = []
       if user_email:
-        member_identifiers.append(f"user:{user_email}")
-        if "@" in user_email and ".iam.gserviceaccount.com" in user_email:
-          member_identifiers.append(f"serviceAccount:{user_email}")
+        member_prefix = (
+            "serviceAccount"
+            if user_email.endswith(".gserviceaccount.com")
+            else "user"
+        )
+        member_identifiers.append(f"{member_prefix}:{user_email}")
 
       user_roles = set()
       for binding in policy.bindings:
@@ -391,13 +404,13 @@ class VertexAIManager:
       if not all_roles_present:
         typer.echo()
         typer.echo("  To grant required roles, run:")
-        if user_email:
+        if user_email and member_prefix:
           for role in self.REQUIRED_ROLES:
             if role not in user_roles:
               typer.secho(
                   "    gcloud projects add-iam-policy-binding"
                   f" {self.project_id} \\\n"
-                  f"      --member='user:{user_email}' \\\n"
+                  f"      --member='{member_prefix}:{user_email}' \\\n"
                   f"      --role='{role}'",
                   fg=typer.colors.YELLOW,
               )

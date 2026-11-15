@@ -386,6 +386,98 @@ def test_vertex_ai_manager_and_cli(
   assert fail_res.exit_code == 1
 
 
+def test_vertex_ai_verify_fails_fast_and_checks_permissions(
+    tmp_path: Path,
+    clean_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  del clean_env
+
+  # Case 1: Placeholder GCP_PROJECT_ID fails fast before ADC or GCP calls.
+  placeholder_env = tmp_path / "placeholder.env"
+  placeholder_env.write_text(
+      'GCP_PROJECT_ID="your-gcp-project-id"\nGCP_LOCATION="us-central1"\n',
+      encoding="utf-8",
+  )
+
+  def _unexpected_default() -> None:
+    raise AssertionError("default() must not run when env vars fail")
+
+  def _unexpected_rm_client(*args: object, **kwargs: object) -> None:
+    del args, kwargs
+    raise AssertionError("ProjectsClient must not run when env vars fail")
+
+  monkeypatch.setattr(vertex_ai, "default", _unexpected_default)
+  monkeypatch.setattr(
+      "google.cloud.resourcemanager_v3.ProjectsClient", _unexpected_rm_client
+  )
+
+  ph_res = runner.invoke(
+      vertex_ai.app, ["verify", "--env-file", str(placeholder_env)]
+  )
+  assert ph_res.exit_code == 1
+  assert "your-gcp-project-id" in ph_res.stdout
+  assert "Verifying project access" not in ph_res.stdout
+
+  # Case 2: Missing IAM roles fail verify_setup() and format SA member prefix.
+  valid_env = _write_valid_env(tmp_path / "valid.env")
+  sa_creds = SimpleNamespace(
+      service_account_email="deployer@my-secops-proj.iam.gserviceaccount.com"
+  )
+  monkeypatch.setattr(
+      vertex_ai, "default", lambda: (sa_creds, "my-secops-proj")
+  )
+  monkeypatch.setattr(
+      vertex_ai.vertexai,
+      "init",
+      lambda project=None, location=None, credentials=None: None,
+  )
+
+  fake_rm_client = MagicMock()
+  fake_rm_client.get_project.return_value = SimpleNamespace(
+      display_name="My SecOps Project"
+  )
+  fake_rm_client.get_iam_policy.return_value = SimpleNamespace(bindings=[])
+  monkeypatch.setattr(
+      "google.cloud.resourcemanager_v3.ProjectsClient",
+      lambda credentials=None: fake_rm_client,
+  )
+  monkeypatch.setattr(
+      vertex_ai.VertexAIManager, "_is_api_enabled", lambda self, api: True
+  )
+
+  sa_fail_res = runner.invoke(
+      vertex_ai.app, ["verify", "--env-file", str(valid_env)]
+  )
+  assert sa_fail_res.exit_code == 1
+  assert "[OK] All checks passed!" not in sa_fail_res.stdout
+  assert "[ERROR] Some checks failed" in sa_fail_res.stdout
+  assert (
+      "--member='serviceAccount:deployer@my-secops-proj.iam.gserviceaccount.com'"
+      in sa_fail_res.stdout
+  )
+  assert "--member='user:deployer@" not in sa_fail_res.stdout
+
+  # Case 3: Non-SA user email still formats --member='user:...'.
+  payload = (
+      base64.urlsafe_b64encode(
+          json.dumps({"email": "analyst@example.com"}).encode("utf-8")
+      )
+      .decode("utf-8")
+      .rstrip("=")
+  )
+  user_creds = SimpleNamespace(id_token=f"hdr.{payload}.sig")
+  monkeypatch.setattr(
+      vertex_ai, "default", lambda: (user_creds, "my-secops-proj")
+  )
+
+  user_fail_res = runner.invoke(
+      vertex_ai.app, ["verify", "--env-file", str(valid_env)]
+  )
+  assert user_fail_res.exit_code == 1
+  assert "--member='user:analyst@example.com'" in user_fail_res.stdout
+
+
 # ---------------------------------------------------------------------------
 # 4. agentspace.py (Gemini Enterprise) Tests
 # ---------------------------------------------------------------------------
