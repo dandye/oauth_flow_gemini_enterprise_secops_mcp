@@ -148,8 +148,8 @@ alias agentspace-url := gemini-enterprise-url
 
 # Interactive OAuth client setup from client_secret.json
 [group('oauth')]
-oauth-setup client_secret:
-  uv run oauth-flow-gemini-enterprise-secops-mcp oauth setup "$1"
+oauth-setup *args:
+  uv run oauth-flow-gemini-enterprise-secops-mcp oauth setup "$@"
 
 # Create OAuth authorization in Discovery Engine
 [group('oauth')]
@@ -200,8 +200,8 @@ iam-setup:
 
 # Verify IAM permissions for service agents
 [group('iam')]
-iam-verify:
-  uv run oauth-flow-gemini-enterprise-secops-mcp iam verify
+iam-verify *args:
+  uv run oauth-flow-gemini-enterprise-secops-mcp iam verify "$@"
 
 # ------------------------------------------------------------------------------
 # Workflows and CLI Execution

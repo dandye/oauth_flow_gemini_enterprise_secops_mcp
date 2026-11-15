@@ -252,6 +252,18 @@ def test_justfile_uses_positional_args_and_grouped_recipes() -> None:
   )
   assert "{{ args }}" not in just_text
   assert 'PATH="$PWD/.venv/bin:$PATH" uv run pytype src' in just_text
+  assert re.search(
+      r"^oauth-setup\s+\*args:\n\s+uv run oauth-flow-gemini-enterprise-secops-mcp"
+      r' oauth setup "\$@"\s*$',
+      just_text,
+      re.MULTILINE,
+  )
+  assert re.search(
+      r"^iam-verify\s+\*args:\n\s+uv run oauth-flow-gemini-enterprise-secops-mcp"
+      r' iam verify "\$@"\s*$',
+      just_text,
+      re.MULTILINE,
+  )
 
   for ge_recipe in (
       "gemini-enterprise-register",
@@ -305,6 +317,18 @@ def test_justfile_uses_positional_args_and_grouped_recipes() -> None:
     assert list_proc.returncode == 0, list_proc.stderr
     for grp in EXPECTED_JUST_GROUPS:
       assert f"[{grp}]" in list_proc.stdout
+    for dry_args in (
+        ["oauth-setup", "client_secret.json", "--pkce"],
+        ["iam-verify"],
+        ["iam-verify", "--principal", "analyst@example.com"],
+    ):
+      dry_proc = subprocess.run(  # noqa: S603
+          [just_bin, "--justfile", str(JUSTFILE_PATH), "--dry-run", *dry_args],
+          capture_output=True,
+          text=True,
+          check=False,
+      )
+      assert dry_proc.returncode == 0, dry_proc.stderr
 
 
 def test_repo_files_contain_no_internal_domain_or_hostname_leaks() -> None:
