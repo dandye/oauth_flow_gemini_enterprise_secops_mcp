@@ -1,42 +1,52 @@
 # DESIGN_SPEC.md
 
 ## Overview
-This ADK Agent is the simplest possible implementation connecting to the Google Cloud Remote MCP Server for SecOps. It acts as a security operations assistant that leverages managed SecOps tools via the MCP protocol. It is designed to be deployed on Vertex AI Agent Engine and integrated with Gemini Enterprise, utilizing OAuth passthrough to authenticate requests to the remote SecOps MCP endpoint as the logged-in end-user.
+
+This ADK agent connects to the Google Security Operations (SecOps) remote MCP server from Vertex AI Agent Engine and integrates with Gemini Enterprise. It uses Gemini Enterprise OAuth passthrough so every request to the remote Google SecOps MCP endpoint executes under the signed-in end user's own credentials.
 
 ## Example Use Cases
-- **List Cases**: User asks "Show me recent cases". The agent calls the SecOps MCP `list_cases` tool and summarizes the active cases using the user's specific credentials.
-- **Search Events**: User asks "Search UDM events for IP 1.2.3.4". The agent uses the `udm_search` tool from the SecOps MCP server.
+
+- **List Cases**: A user asks "Show me recent cases". The agent calls the Google SecOps MCP `list_cases` tool using the user's OAuth bearer token and summarizes active cases.
+- **Search Events**: A user asks "Search UDM events for IP 1.2.3.4". The agent calls `udm_search` on the Google SecOps MCP server.
 
 ## Tools Required
-- **McpToolset**: Specifically connected via streaming HTTP to the Google Cloud Remote MCP Server for SecOps (`https://chronicle.[REGION].rep.googleapis.com/mcp`). 
+
+- **McpToolset**: Connects over streamable HTTP to the locational Google SecOps remote MCP endpoint (`https://{region}-chronicle.googleapis.com/mcp`, overridable via `SECOPS_MCP_URL`).
   - **Authentication**: Uses Gemini Enterprise managed OAuth passthrough.
-  - **Context Variables**: Project ID, Customer ID, and Region are used to target the correct SecOps tenant.
+  - **Tenant Context**: Uses `CHRONICLE_PROJECT_ID`, `CHRONICLE_CUSTOMER_ID`, and `CHRONICLE_REGION` to route requests to the target Google SecOps tenant.
 
 ## Constraints & Safety Rules
-- The agent must rely exclusively on the SecOps MCP server for its security operations capabilities.
-- The agent must not log sensitive entity details (like raw credentials or tokens) in standard text output.
-- The agent must use Vertex AI Agent Engine best practices, meaning no local session type should be explicitly configured in the code.
+
+- The agent relies exclusively on the remote Google SecOps MCP server for SIEM and SOAR operations.
+- The agent never logs raw OAuth tokens or client secrets in standard output or application logs.
+- The agent follows Vertex AI Agent Engine deployment practices without hardcoding local session storage in agent definitions.
 
 ## Success Criteria
-- The agent successfully initializes and connects to the remote SecOps MCP endpoint.
-- The agent can execute a standard tool (e.g., `list_cases` or `udm_search`) when queried.
-- The user's identity is correctly passed from Gemini Enterprise through Agent Engine to the MCP server.
 
-## Edge Cases to Handle
-- **Missing Configuration**: The agent should fail gracefully or inform the user if the SecOps Region, Project ID, or Customer ID are not set in the environment.
-- **Authentication Errors**: If the user is not logged in or the token is missing from the state, the agent should inform the user that a sign-in is required via the Gemini Enterprise interface.
+- The agent initializes and connects to `https://{region}-chronicle.googleapis.com/mcp`.
+- The agent executes Google SecOps MCP tools such as `udm_search` and `list_cases` on behalf of the authorized user.
+- The signed-in user's OAuth token flows from Gemini Enterprise through Vertex AI Agent Engine to the Google SecOps MCP server with `x-goog-user-project` set to `CHRONICLE_PROJECT_ID`.
+
+## Edge Cases & Runtime Prerequisites
+
+- **Missing Tenant Configuration**: When `CHRONICLE_PROJECT_ID`, `CHRONICLE_CUSTOMER_ID`, or `CHRONICLE_REGION` is unset, the agent logs a clear configuration error rather than sending unroutable tool calls.
+- **Missing OAuth Token**: When an authorization ID is configured and the session state lacks a user OAuth token, the agent does not silently fall back to service account credentials in production; Gemini Enterprise prompts the user to sign in.
+- **Google Cloud IAM Requirements**: Authorizing end users must hold `roles/mcp.toolUser`, `roles/chronicle.viewer` (or higher), and `roles/serviceusage.serviceUsageConsumer` on `CHRONICLE_PROJECT_ID`.
+- **Google SecOps SOAR Provisioning**: Calling SOAR-backed tools (`list_cases`, `list_integrations`, `list_playbooks`) requires the OAuth user to match an access rule in `Settings > Access management > Group Mapping` and to have signed in to the Google SecOps web UI at least once so their profile exists in `Settings > Access management > User Management`; otherwise SOAR endpoints return `401 You are not recognized.`.
 
 ## Design Considerations: Gemini Enterprise OAuth Passthrough
 
-This agent implements **OAuth Passthrough** specifically for the Gemini Enterprise ecosystem. This is a "hard requirement" to ensure that users act strictly as themselves and only access SecOps data they are entitled to.
+Gemini Enterprise OAuth passthrough enforces per-user access control so analysts only query Google SecOps data permitted by their own IAM and SOAR roles.
 
 ### Architecture
-1.  **Authorization Resource**: An OAuth configuration is registered in Google Cloud (Discovery Engine) as an "Authorization" resource. This configuration includes the Client ID, Secret, and the `https://www.googleapis.com/auth/chronicle` scope.
-2.  **Registration**: The Agent Engine agent is registered with Gemini Enterprise using the `make register-gemini-enterprise` command, passing the `--authorization-id` of the resource created in step 1.
-3.  **UI Orchestration**: When a user interacts with the agent in Gemini Enterprise, the Gemini UI detects the authorization requirement. It pauses the interaction, spawns the Google Sign-In flow, and captures the user's OAuth token.
-4.  **Token Handoff**: Gemini Enterprise passes this token to the Vertex AI Agent Engine in the `authorizations` block of the request.
-5.  **State Injection**: The Agent Engine runtime automatically injects this token into the agent's session state (`tool_context.state`), keyed by the registered Authorization ID.
-6.  **Header Provider**: The agent's `McpToolset` uses a custom `header_provider` function (`get_secops_headers`). This function extracts the token from the state and adds it as a `Bearer` token to the `Authorization` header of the MCP connection request.
+
+1. **Authorization Resource**: `just oauth-create-auth` registers an OAuth 2.0 configuration in Google Cloud Discovery Engine (`projects.locations.authorizations`) with the OAuth Client ID, Client Secret, `https://www.googleapis.com/auth/chronicle` scope, and optional RFC 7636 PKCE verification (`pkceVerificationEnabled`).
+2. **Agent Registration**: `just agentspace-register` (or `just run agentspace register`) links the deployed Vertex AI Reasoning Engine with the Gemini Enterprise app and attaches the Discovery Engine authorization resource in `authorization_config.tool_authorizations`.
+3. **UI Sign-In Orchestration**: When a user chats with the agent in Gemini Enterprise, Gemini Enterprise redirects the browser through the registered `authorizationUri` and exchanges the authorization code for an OAuth access token.
+4. **Token Handoff**: Gemini Enterprise forwards the user's OAuth access token to Vertex AI Agent Engine in the request authorization context.
+5. **Session State Injection**: Vertex AI Agent Engine injects the token into `context.state` under `temp:{auth_id}` (or `{auth_id}`).
+6. **Header Provider**: `get_secops_headers` reads the user token from `context.state` and attaches `Authorization: Bearer <token>` and `x-goog-user-project: <CHRONICLE_PROJECT_ID>` to outgoing MCP requests.
 
 ### Implementation Note
-The agent does **not** use the ADK's interactive `auth_scheme` (the `adk_request_credential` loop) because Gemini Enterprise orchestrates the login flow externally before invoking the agent. Instead, the agent consumes the pre-authorized token provided in the session context.
+
+The agent does not enable ADK's interactive `auth_scheme` (`adk_request_credential`) loop because Gemini Enterprise completes the OAuth 2.0 consent flow before invoking the Reasoning Engine. Instead, `get_secops_headers` consumes the pre-authorized token injected into session state.
