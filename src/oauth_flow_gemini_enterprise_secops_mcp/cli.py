@@ -1,8 +1,8 @@
 """Unified CLI for oauth_flow_gemini_enterprise_secops_mcp.
 
-Provides a unified management interface for Agent Engine deployments,
-Gemini Enterprise (AgentSpace) registration, OAuth authorizations,
-and Vertex AI configuration.
+Provides a unified management interface for Vertex AI Agent Engine deployments,
+Gemini Enterprise registration, OAuth authorizations, and Vertex AI
+configuration.
 """
 
 import importlib
@@ -17,6 +17,9 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 from oauth_flow_gemini_enterprise_secops_mcp.core import run_pipeline
+from oauth_flow_gemini_enterprise_secops_mcp.env_validation import (
+    resolve_gemini_enterprise_app_id,
+)
 
 # Resolve package and repo roots
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -54,8 +57,8 @@ console = Console()
 app = typer.Typer(
     name="oauth-flow-gemini-enterprise-secops-mcp",
     help=(
-        "Unified management CLI for Agentic SOC Gemini Enterprise SecOps MCP"
-        " OAuth"
+        "Unified management CLI for Google Security Operations (SecOps) MCP"
+        " with Gemini Enterprise OAuth"
     ),
     add_completion=True,
     rich_markup_mode="rich",
@@ -64,8 +67,17 @@ app = typer.Typer(
 
 # Mount management subcommands
 SUBCOMMAND_SPECS = [
-    ("agent_engine", "agent-engine", "Manage Agent Engine instances"),
-    ("agentspace", "agentspace", "Manage AgentSpace apps and agents"),
+    ("agent_engine", "agent-engine", "Manage Vertex AI Agent Engine instances"),
+    (
+        "agentspace",
+        "gemini-enterprise",
+        "Manage Gemini Enterprise apps and agents",
+    ),
+    (
+        "agentspace",
+        "agentspace",
+        "Manage Gemini Enterprise apps and agents (backward-compatible alias)",
+    ),
     ("oauth", "oauth", "Manage OAuth authorizations"),
     ("secret", "secret", "Upload and verify Secret Manager credentials"),
     ("iam", "iam", "Manage IAM permissions for service accounts"),
@@ -112,7 +124,7 @@ def run_demo(
     name: Target entity name to process.
   """
   result = run_pipeline(name)
-  console.print(f"[green]Pipeline Output:[/green] {result}")
+  console.print(f"[green][OK] Pipeline Output:[/green] {result}")
 
 
 @workflow_app.command("full-deploy")
@@ -122,7 +134,7 @@ def full_deploy(
     ] = REPO_ROOT
     / ".env",
 ) -> None:
-  """Complete deployment workflow with OAuth.
+  """Complete deployment workflow with OAuth and Gemini Enterprise linking.
 
   Args:
     env_file: Path to the environment file.
@@ -131,7 +143,7 @@ def full_deploy(
       "\n[bold blue]Starting full deployment workflow...[/bold blue]\n"
   )
 
-  console.print("[yellow]Step 1: Deploy Agent Engine[/yellow]")
+  console.print("[yellow]Step 1: Deploy Vertex AI Agent Engine[/yellow]")
   console.print(
       "Please run: [cyan]just agent-engine-deploy[/cyan] and save"
       " AGENT_ENGINE_RESOURCE_NAME to .env\n"
@@ -139,7 +151,8 @@ def full_deploy(
 
   if not typer.confirm("Have you deployed the agent engine?"):
     console.print(
-        "[red]Deployment cancelled. Please deploy the agent engine first.[/red]"
+        "[red][ERROR] Deployment cancelled. Please deploy the agent engine"
+        " first.[/red]"
     )
     raise typer.Exit(code=1)
 
@@ -150,8 +163,8 @@ def full_deploy(
 
   if not oauth_manager.env_vars.get("OAUTH_CLIENT_ID"):
     console.print(
-        "[red]OAuth not configured. Please run:[/red] [cyan]just run oauth"
-        " setup <client_secret.json>[/cyan]"
+        "[red][ERROR] OAuth not configured. Please run:[/red]"
+        " [cyan]just oauth-setup <client_secret.json>[/cyan]"
     )
     raise typer.Exit(code=1)
 
@@ -169,25 +182,29 @@ def full_deploy(
   if oauth_manager.create_authorization(
       auth_id, client_id, client_secret, auth_uri, token_uri
   ):
-    console.print(f"[green]OAuth authorization created: {auth_id}[/green]")
+    console.print(f"[green][OK] OAuth authorization created: {auth_id}[/green]")
   else:
-    console.print("[red]Failed to create OAuth authorization[/red]")
+    console.print("[red][ERROR] Failed to create OAuth authorization[/red]")
     raise typer.Exit(code=1)
 
-  console.print("\n[yellow]Step 3: Link Agent to AgentSpace[/yellow]")
+  console.print("\n[yellow]Step 3: Link Agent to Gemini Enterprise[/yellow]")
   from oauth_flow_gemini_enterprise_secops_mcp.agentspace import (
       AgentSpaceManager,
   )
 
-  as_manager = AgentSpaceManager(env_file)
-  if as_manager.link_agent_to_agentspace():
-    console.print("[green]Agent linked to AgentSpace successfully![/green]")
+  ge_manager = AgentSpaceManager(env_file)
+  if ge_manager.link_agent_to_agentspace():
+    console.print(
+        "[green][OK] Agent linked to Gemini Enterprise successfully![/green]"
+    )
   else:
-    console.print("[red]Failed to link agent to AgentSpace[/red]")
+    console.print(
+        "[red][ERROR] Failed to link agent to Gemini Enterprise[/red]"
+    )
     raise typer.Exit(code=1)
 
   console.print(
-      "\n[bold green]Full deployment workflow completed"
+      "\n[bold green][OK] Full deployment workflow completed"
       " successfully![/bold green]"
   )
 
@@ -199,34 +216,37 @@ def redeploy_all(
     ] = REPO_ROOT
     / ".env",
 ) -> None:
-  """Redeploy agent engine and update AgentSpace configuration.
+  """Redeploy Agent Engine and update Gemini Enterprise configuration.
 
   Args:
     env_file: Path to the environment file.
   """
   console.print("\n[bold blue]Starting full redeployment...[/bold blue]\n")
 
-  console.print("[yellow]Step 1: Redeploy Agent Engine[/yellow]")
+  console.print("[yellow]Step 1: Redeploy Vertex AI Agent Engine[/yellow]")
   console.print("Please run: [cyan]just agent-engine-update[/cyan]\n")
 
   if not typer.confirm("Have you redeployed the agent engine?"):
-    console.print("[red]Redeployment cancelled.[/red]")
+    console.print("[red][ERROR] Redeployment cancelled.[/red]")
     raise typer.Exit(code=1)
 
-  console.print("\n[yellow]Step 2: Update AgentSpace Configuration[/yellow]")
+  console.print(
+      "\n[yellow]Step 2: Update Gemini Enterprise Configuration[/yellow]"
+  )
   from oauth_flow_gemini_enterprise_secops_mcp.agentspace import (
       AgentSpaceManager,
   )
 
   manager = AgentSpaceManager(env_file)
   if manager.update_agent():
-    console.print("[green]AgentSpace updated successfully![/green]")
+    console.print("[green][OK] Gemini Enterprise updated successfully![/green]")
   else:
-    console.print("[red]Failed to update AgentSpace[/red]")
+    console.print("[red][ERROR] Failed to update Gemini Enterprise[/red]")
     raise typer.Exit(code=1)
 
   console.print(
-      "\n[bold green]Full redeployment completed successfully![/bold green]"
+      "\n[bold green][OK] Full redeployment completed"
+      " successfully![/bold green]"
   )
 
 
@@ -256,25 +276,32 @@ def status(
       "GCP_PROJECT_NUMBER",
       "GCP_LOCATION",
       "AGENT_ENGINE_RESOURCE_NAME",
-      "AGENTSPACE_APP_ID",
+      "GEMINI_ENTERPRISE_APP_ID",
       "AGENTSPACE_AGENT_ID",
       "OAUTH_AUTH_ID",
       "GEMINI_AUTHORIZATION_ID",
   ]
 
   for var in env_vars_to_check:
-    value = manager.env_vars.get(var)
+    if var == "GEMINI_ENTERPRISE_APP_ID":
+      value = resolve_gemini_enterprise_app_id(manager.env_vars)
+    else:
+      value = manager.env_vars.get(var)
     if value:
       display_value = value if len(value) < 60 else f"{value[:60]}..."
       console.print(f"  {var}: [green]{display_value}[/green]")
     else:
       console.print(f"  {var}: [red]Not set[/red]")
 
-  console.print("\n[yellow]AgentSpace Status:[/yellow]")
+  console.print("\n[yellow]Gemini Enterprise Status:[/yellow]")
   if manager.verify_agent():
-    console.print("  [green]AgentSpace agent is verified and active[/green]")
+    console.print(
+        "  [green][OK] Gemini Enterprise agent is verified and active[/green]"
+    )
   else:
-    console.print("  [red]AgentSpace agent verification failed[/red]")
+    console.print(
+        "  [red][ERROR] Gemini Enterprise agent verification failed[/red]"
+    )
 
   console.print()
 
@@ -297,17 +324,18 @@ def setup(
     env_example = REPO_ROOT / ".env.example"
     if env_example.exists():
       shutil.copy(env_example, env_file)
-      console.print(f"[green]Created {env_file} from template[/green]")
+      console.print(f"[green][OK] Created {env_file} from template[/green]")
       console.print(
-          f"[yellow]Please edit {env_file} with your configuration[/yellow]"
+          f"[yellow][INFO] Please edit {env_file} with your"
+          " configuration[/yellow]"
       )
     else:
       console.print(
-          f"[yellow]No .env.example found. Please create {env_file}"
+          f"[yellow][WARNING] No .env.example found. Please create {env_file}"
           " manually[/yellow]"
       )
   else:
-    console.print(f"[green]{env_file} already exists[/green]")
+    console.print(f"[green][OK] {env_file} already exists[/green]")
 
   console.print("\n[yellow]Checking Python dependencies...[/yellow]")
   try:
@@ -315,20 +343,20 @@ def setup(
     import google.auth  # noqa: F401
     import vertexai  # noqa: F401
 
-    console.print("[green]All required packages are installed[/green]")
+    console.print("[green][OK] All required packages are installed[/green]")
   except ImportError as exc:
-    console.print(f"[red]Missing package: {exc}[/red]")
+    console.print(f"[red][ERROR] Missing package: {exc}[/red]")
     console.print("[yellow]Please run:[/yellow] [cyan]just sync[/cyan]")
     raise typer.Exit(code=1) from exc
 
-  console.print("\n[bold green]Setup complete![/bold green]")
+  console.print("\n[bold green][OK] Setup complete![/bold green]")
 
 
 @app.command()
 def version() -> None:
   """Display version information."""
   console.print(
-      "\n[bold blue]Agentic SOC AgentSpace Management CLI[/bold blue]"
+      "\n[bold blue]Google SecOps Gemini Enterprise Management CLI[/bold blue]"
   )
   console.print("Version: [cyan]0.1.0[/cyan]")
   console.print("Python Typer-based unified management interface\n")
@@ -339,10 +367,10 @@ def main() -> None:
   try:
     app()
   except KeyboardInterrupt as exc:
-    console.print("\n[yellow]Operation cancelled by user[/yellow]")
+    console.print("\n[yellow][INFO] Operation cancelled by user[/yellow]")
     raise typer.Exit(code=130) from exc
   except Exception as exc:
-    console.print(f"\n[red]Unexpected error: {exc}[/red]")
+    console.print(f"\n[red][ERROR] Unexpected error: {exc}[/red]")
     raise typer.Exit(code=1) from exc
 
 

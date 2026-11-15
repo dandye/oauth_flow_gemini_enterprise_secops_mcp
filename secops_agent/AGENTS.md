@@ -2,51 +2,21 @@
 
 ## Reference Documentation
 
-If you have ADK skills available, use those instead of fetching the URLs below.
-
-Otherwise, reference these resources in `../external/agent-starter-pack/` or online:
-- **ADK Cheatsheet**: `../external/agent-starter-pack/agent_starter_pack/resources/docs/adk-cheatsheet.md`
-- **Evaluation Guide**: `../external/agent-starter-pack/agent_starter_pack/resources/docs/adk-eval-guide.md`
-- **Deployment Guide**: `../external/agent-starter-pack/agent_starter_pack/resources/docs/adk-deploy-guide.md`
-- **Development Guide**: `../external/agent-starter-pack/docs/guide/development-guide.md`
-- **ADK Docs**: https://google.github.io/adk-docs/llms.txt
+- **ADK Documentation**: https://google.github.io/adk-docs/
+- **Package Overview**: [README.md](README.md)
+- **Root Task Runner**: [../justfile](../justfile)
 
 ---
 
-## Development Phases
+## Development Workflow
 
-### Phase 1: Understand Requirements
-Before writing any code, understand the project's requirements, constraints, and success criteria.
+1. **Understand Requirements**: Review `secops_agent_app/agent.py` (`create_agent()` and `create_app()`) and root CLI integration in `src/oauth_flow_gemini_enterprise_secops_mcp/` before making changes.
+2. **Implement & Test Locally**: Add or update hermetic unit tests under `tests/` at the repository root and run `just test`.
+3. **Verify Style & Types**: Run `uv run ruff check . secops_agent`, `uv run pyink --check --diff . secops_agent`, and `just typecheck` from the repository root.
+4. **Deploy (Requires Explicit User Approval)**: Deploy or update Vertex AI Agent Engine from the repository root with `just agent-engine-deploy` or `just agent-engine-update`.
 
-### Phase 2: Build and Implement
-Implement agent logic in `secops_agent_app/`. Use `just playground` for interactive testing. Iterate based on user feedback.
-
-### Phase 3: The Evaluation Loop (Main Iteration Phase)
-Start with 1-2 eval cases, run `just eval`, iterate. Expect 5-10+ iterations. See the **Evaluation Guide** for metrics, evalset schema, LLM-as-judge config, and common gotchas.
-
-### Phase 4: Pre-Deployment Tests
-Run `just test`. Fix issues until all tests pass.
-
-### Phase 5: Deploy to Dev
-**Requires explicit human approval.** Run `just deploy` (or `just agent-engine-deploy` from repository root) only after user confirms.
-
-## Development Commands
-
-| Command | Purpose |
-| --- | --- |
-| `just playground` | Interactive local testing |
-| `just test` | Run unit and integration tests |
-| `just eval` | Run evaluation against evalsets |
-| `just eval-all` | Run all evalsets |
-| `just lint` | Check code quality |
-| `just format` | Format code (`ruff` + `pyink`) |
-| `just deploy` | Deploy to Vertex AI Agent Engine |
-
----
-
-## Operational Guidelines for Coding Agents
+## Operational Guidelines
 
 - **Style**: Follow the Google Python Style Guide (2-space indentation, 80-column line length, Pyink formatting, Google docstrings, `%s` logging placeholders).
-- **Never use emojis** anywhere in code, comments, documentation, logs, or commit messages.
-- **Code preservation**: Only modify code directly targeted by the user's request. Preserve all surrounding code, config values (e.g., `model`), comments, and formatting.
-- **Run Python with `uv`**: `uv run python script.py`. Run `just install` first.
+- **Hygiene**: Never include emojis, decorative Unicode symbols, em-dashes, or internal environment references in code, comments, documentation, logs, or commit messages.
+- **Dependencies**: Manage all dependencies through the root `pyproject.toml` and `uv.lock` using `uv`.
