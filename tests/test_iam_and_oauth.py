@@ -421,7 +421,7 @@ def test_oauth_setup_without_and_with_pkce_has_no_visit_prompt(
   monkeypatch.setattr(
       oauth.google.auth,
       "default",
-      lambda: (_FakeCredentials(), "agent-host-proj"),
+      lambda scopes=None: (_FakeCredentials(), "agent-host-proj"),
   )
   secret_file = _write_client_secret(tmp_path, client_type="web")
   env_file = tmp_path / ".env"
@@ -488,7 +488,7 @@ def test_oauth_setup_error_handling(
   monkeypatch.setattr(
       oauth.google.auth,
       "default",
-      lambda: (_FakeCredentials(), "agent-host-proj"),
+      lambda scopes=None: (_FakeCredentials(), "agent-host-proj"),
   )
   env_file = tmp_path / ".env"
 
@@ -516,7 +516,7 @@ def test_oauth_create_auth_verify_and_delete(
   monkeypatch.setattr(
       oauth.google.auth,
       "default",
-      lambda: (fake_creds, "agent-host-proj"),
+      lambda scopes=None: (fake_creds, "agent-host-proj"),
   )
 
   env_file = _write_env_file(
@@ -642,7 +642,10 @@ def test_oauth_http_and_env_failure_paths(
   monkeypatch.setattr(
       oauth.google.auth,
       "default",
-      lambda: (_FakeCredentials(bearer_value="tok", valid=True), "proj"),
+      lambda scopes=None: (
+          _FakeCredentials(bearer_value="tok", valid=True),
+          "proj",
+      ),
   )
   empty_env = tmp_path / "empty.env"
   for key in (
@@ -739,6 +742,77 @@ def test_oauth_http_and_env_failure_paths(
       ).exit_code
       == 1
   )
+
+
+def test_oauth_manager_requests_cloud_platform_scope_for_verify(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+  captured_scopes: list[object] = []
+
+  class _ScopedCredentials:
+
+    def __init__(self) -> None:
+      self.token: str | None = None
+      self.valid = False
+      self.refreshed = False
+
+    def refresh(self, request: object) -> None:
+      del request
+      assert captured_scopes[-1] == [
+          "https://www.googleapis.com/auth/cloud-platform"
+      ]
+      self.refreshed = True
+      self.valid = True
+      self.token = "scoped-bearer-value"  # noqa: S105
+
+  fake_creds = _ScopedCredentials()
+
+  def _fake_default(
+      scopes: list[str] | None = None,
+  ) -> tuple[_ScopedCredentials, str]:
+    captured_scopes.append(scopes)
+    return fake_creds, "agent-host-proj"
+
+  monkeypatch.setattr(oauth.google.auth, "default", _fake_default)
+
+  env_file = _write_env_file(
+      tmp_path / ".env",
+      {
+          "GCP_PROJECT_NUMBER": "123456789012",
+          "OAUTH_AUTH_ID": "scoped-auth-v1",
+      },
+  )
+
+  seen_headers: list[dict[str, str]] = []
+
+  def _fake_get(url: str, headers: dict[str, str], timeout: int = 60) -> object:
+    del timeout
+    seen_headers.append(headers)
+    return SimpleNamespace(
+        status_code=200,
+        raise_for_status=lambda: None,
+        json=lambda: {
+            "name": url,
+            "serverSideOauth2": {"pkceVerificationEnabled": True},
+        },
+    )
+
+  monkeypatch.setattr(oauth.requests, "get", _fake_get)
+
+  res = runner.invoke(
+      oauth.app,
+      ["verify", "--auth-id", "scoped-auth-v1", "--env-file", str(env_file)],
+  )
+  assert res.exit_code == 0
+  assert captured_scopes == [["https://www.googleapis.com/auth/cloud-platform"]]
+  assert fake_creds.refreshed is True
+  assert seen_headers == [
+      {
+          "Authorization": "Bearer scoped-bearer-value",
+          "X-Goog-User-Project": "123456789012",
+      }
+  ]
+  assert "scoped-auth-v1" in res.output
 
 
 def test_docs_prerequisites_locational_endpoint_and_hygiene() -> None:
