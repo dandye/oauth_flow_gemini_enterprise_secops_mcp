@@ -12,12 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""OpenTelemetry and Google GenAI telemetry configuration."""
+
 import logging
 import os
 
 
 def setup_telemetry() -> str | None:
-  """Configure OpenTelemetry and GenAI telemetry with GCS upload."""
+  """Configure OpenTelemetry and GenAI telemetry with Cloud Storage upload.
+
+  Returns:
+    The configured Cloud Storage bucket name when set, or None.
+  """
   os.environ.setdefault("GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY", "true")
 
   bucket = os.environ.get("LOGS_BUCKET_NAME")
@@ -26,7 +32,8 @@ def setup_telemetry() -> str | None:
   )
   if bucket and capture_content != "false":
     logging.info(
-        "Prompt-response logging enabled - mode: NO_CONTENT (metadata only, no prompts/responses)"
+        "Prompt-response logging enabled - mode: NO_CONTENT (metadata only,"
+        " no prompts/responses)"
     )
     os.environ["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] = (
         "NO_CONTENT"
@@ -41,7 +48,7 @@ def setup_telemetry() -> str | None:
     commit_sha = os.environ.get("COMMIT_SHA", "dev")
     os.environ.setdefault(
         "OTEL_RESOURCE_ATTRIBUTES",
-        f"service.namespace=../secops-agent,service.version={commit_sha}",
+        f"service.namespace=secops-agent,service.version={commit_sha}",
     )
     path = os.environ.get("GENAI_TELEMETRY_PATH", "completions")
     os.environ.setdefault(
@@ -50,7 +57,9 @@ def setup_telemetry() -> str | None:
     )
   else:
     logging.info(
-        "Prompt-response logging disabled (set LOGS_BUCKET_NAME=gs://your-bucket and OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=NO_CONTENT to enable)"
+        "Prompt-response logging disabled (set LOGS_BUCKET_NAME=gs://your-bucket"
+        " and OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=NO_CONTENT"
+        " to enable)"
     )
 
   return bucket

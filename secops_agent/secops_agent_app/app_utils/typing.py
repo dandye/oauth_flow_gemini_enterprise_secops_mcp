@@ -11,23 +11,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import uuid
-from typing import (
-    Literal,
-)
 
-from pydantic import (
-    BaseModel,
-    Field,
-)
+"""Pydantic data models for SecOps agent telemetry and feedback."""
+
+import uuid
+from typing import Literal
+
+from pydantic import BaseModel
+from pydantic import Field
 
 
 class Feedback(BaseModel):
-  """Represents feedback for a conversation."""
+  """Represents user feedback for an agent conversation."""
 
   score: int | float
   text: str | None = ""
   log_type: Literal["feedback"] = "feedback"
-  service_name: Literal["../secops-agent"] = "../secops-agent"
+  service_name: Literal["secops-agent"] = "secops-agent"
   user_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
   session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))

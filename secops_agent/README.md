@@ -1,40 +1,48 @@
 # secops_agent
 
-SecOps Remote MCP ReAct Agent built with Google ADK (`google-adk`).
+Google Security Operations (SecOps) Remote MCP Agent built with the Google Agent Development Kit (`google-adk`).
 
-## Project Structure
+## Package Structure
 
 ```text
 secops_agent/
-├── secops_agent_app/          # Core agent package
-│   ├── agent.py               # Main ADK LlmAgent & McpToolset logic
-│   ├── agent_engine_app.py    # Vertex AI Agent Engine application wrapper
-│   └── app_utils/             # Deployment and telemetry utilities
-├── tests/                     # Unit, integration, and eval tests
-├── AGENTS.md                  # AI-assisted development guide
-├── justfile                   # Task runner commands
-└── pyproject.toml             # Sub-package metadata and configuration
+|-- __init__.py
+|-- AGENTS.md                  # AI-assisted development guidelines
+|-- README.md                  # Package overview and commands
+|-- ruff.toml                  # Ruff lint configuration inheriting ../pyproject.toml
+'-- secops_agent_app/
+    |-- __init__.py
+    |-- agent.py               # ADK Agent & App factories (create_agent, create_app)
+    '-- app_utils/
+        |-- __init__.py
+        |-- telemetry.py       # OpenTelemetry and GenAI logging helpers
+        '-- typing.py          # Feedback Pydantic schema
 ```
 
-## Quick Start
+## Core Entrypoints (`secops_agent_app/agent.py`)
 
-Install required packages and launch the local development playground from the repository root or `secops_agent/`:
+- `create_agent() -> google.adk.agents.Agent`: Builds the SecOps ADK `Agent` connected to the remote Google Security Operations (SecOps) MCP server via `McpToolset`, forwarding per-user OAuth bearer tokens from Gemini Enterprise (`GEMINI_AUTHORIZATION_ID` / `OAUTH_AUTH_ID`), filtering high-volume feed/parser tools (`DISABLED_SECOPS_TOOLS`), and enforcing optional human-in-the-loop confirmation on destructive tools (`confirm_destructive_secops_tool`).
+- `create_app() -> google.adk.apps.App`: Wraps `create_agent()` in an ADK `App` container configured with `EventsCompactionConfig`, `ResumabilityConfig`, and conditional `ContextCacheConfig` for deployment to Vertex AI Agent Engine (`AdkApp`).
 
-```bash
-just install && just playground
-```
+## Root Task Runner Commands
 
-## Commands
+Run all development, testing, and deployment workflows from the repository root using the root [justfile](../justfile):
 
 | Command | Description |
 | --- | --- |
-| `just install` | Install dependencies using `uv` |
-| `just playground` | Launch local ADK web playground |
-| `just lint` | Run code quality checks (`ruff` and `pyink`) |
-| `just format` | Format code (`ruff --fix` and `pyink`) |
-| `just test` | Run unit and integration tests |
-| `just eval` | Run ADK agent evaluation |
-| `just deploy` | Deploy agent to Vertex AI Agent Engine |
-| `just register-gemini-enterprise` | Register deployed agent with Gemini Enterprise |
+| `just setup` | Create `.env` from `.env.example` and synchronize `uv` dependencies |
+| `just sync` | Synchronize virtual environment dependencies via `uv` |
+| `just test` | Run hermetic unit tests with `pytest` |
+| `just lint` | Run `ruff` and `pyink --check` code quality checks |
+| `just format` | Format code in-place with `ruff --fix` and `pyink` |
+| `just typecheck` | Run static type checking with `pytype` |
+| `just agent-engine-deploy` | Deploy `secops_agent` to Vertex AI Agent Engine |
+| `just agent-engine-update` | Update an existing Vertex AI Agent Engine deployment |
+| `just agent-engine-test` | Send a test query to the deployed Agent Engine |
+| `just gemini-enterprise-link-agent` | Link the deployed Agent Engine to Gemini Enterprise with OAuth |
 
-For full command options and usage, refer to [justfile](justfile) or the root [justfile](../justfile).
+To launch the local ADK web playground from the repository root:
+
+```bash
+uv run adk web secops_agent --port 8501
+```

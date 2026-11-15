@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Vertex AI Setup and Verification Manager.
 
-This script helps verify and manage Vertex AI setup requirements including
-API enablement, authentication, permissions, and quota status.
+This module verifies and manages Vertex AI setup requirements including
+API enablement, authentication, permissions, and quota status for the
+Google Security Operations (SecOps) MCP agent.
 """
 
+import base64
+import json
 import os
 from pathlib import Path
 from typing import Annotated
@@ -15,14 +18,16 @@ from dotenv import load_dotenv
 from google.auth import default
 from google.auth.exceptions import DefaultCredentialsError
 
-# Import validation utilities
 from oauth_flow_gemini_enterprise_secops_mcp.env_validation import (
     is_placeholder_value,
 )
 
 app = typer.Typer(
     add_completion=False,
-    help="Manage and verify Vertex AI setup for the Google MCP Security Agent.",
+    help=(
+        "Manage and verify Vertex AI setup for the Google Security Operations"
+        " (SecOps) MCP Agent."
+    ),
 )
 
 
@@ -39,16 +44,15 @@ class VertexAIManager:
 
   # Optional APIs depending on features used
   OPTIONAL_APIS = [
-      "discoveryengine.googleapis.com",  # For AgentSpace
-      "securitycenter.googleapis.com",  # For SCC tools
-      "chronicle.googleapis.com",  # For SIEM/Chronicle tools
-      # TODO: OneMCP for SecOps
+      "discoveryengine.googleapis.com",  # For Gemini Enterprise
+      "securitycenter.googleapis.com",  # For Security Command Center tools
+      "chronicle.googleapis.com",  # For Google Security Operations (SecOps)
   ]
 
   # Required IAM roles
   REQUIRED_ROLES = [
       "roles/aiplatform.user",
-      "roles/storage.admin",  # why?
+      "roles/storage.admin",  # Required for Vertex AI staging bucket access
   ]
 
   def __init__(self, env_file: Path):
@@ -59,16 +63,15 @@ class VertexAIManager:
     """
     self.env_file = env_file
     self.env_vars = self._load_env_vars()
-    self.project_id = None
-    self.location = None
+    self.project_id: str | None = None
+    self.location: str | None = None
     self.credentials = None
 
   def _load_env_vars(self) -> dict[str, str]:
     """Load environment variables from the .env file."""
     if self.env_file.exists():
       load_dotenv(self.env_file, override=True)
-    env_vars = dict(os.environ)
-    return env_vars
+    return dict(os.environ)
 
   def verify_setup(
       self, skip_apis: bool = False, skip_permissions: bool = False
@@ -76,11 +79,11 @@ class VertexAIManager:
     """Run complete verification of Vertex AI setup.
 
     Args:
-        skip_apis: Skip API enablement checks
-        skip_permissions: Skip IAM permission checks
+        skip_apis: Skip API enablement checks.
+        skip_permissions: Skip IAM permission checks.
 
     Returns:
-        True if all checks pass, False otherwise
+        True if all checks pass, False otherwise.
     """
     typer.echo()
     typer.secho("=" * 80, fg=typer.colors.BLUE)
@@ -95,7 +98,15 @@ class VertexAIManager:
         "1. Checking environment variables...", fg=typer.colors.CYAN, bold=True
     )
     if not self._check_env_vars():
-      all_passed = False
+      typer.echo()
+      typer.secho("=" * 80, fg=typer.colors.BLUE)
+      typer.secho("[ERROR] Some checks failed", fg=typer.colors.RED, bold=True)
+      typer.secho(
+          "Please fix the issues above before proceeding.", fg=typer.colors.RED
+      )
+      typer.secho("=" * 80, fg=typer.colors.BLUE)
+      typer.echo()
+      return False
     typer.echo()
 
     # Check 2: Authentication
@@ -103,8 +114,7 @@ class VertexAIManager:
         "2. Checking authentication...", fg=typer.colors.CYAN, bold=True
     )
     if not self._check_authentication():
-      all_passed = False
-      return False  # Can't continue without auth
+      return False
     typer.echo()
 
     # Check 3: Project access
@@ -139,7 +149,8 @@ class VertexAIManager:
       typer.secho(
           "6. Checking IAM permissions...", fg=typer.colors.CYAN, bold=True
       )
-      self._check_permissions()  # This is informational, doesn't fail
+      if not self._check_permissions():
+        all_passed = False
       typer.echo()
 
     # Final summary
@@ -168,7 +179,6 @@ class VertexAIManager:
         typer.secho(f"  [ERROR] {var}: Not set", fg=typer.colors.RED)
         all_valid = False
       else:
-        # Check if it's a placeholder value
         is_placeholder, reason = is_placeholder_value(var, value)
         if is_placeholder:
           typer.secho(
@@ -183,32 +193,10 @@ class VertexAIManager:
           elif var == "GCP_LOCATION":
             self.location = value
 
-    # Check optional RAG location
-    rag_location = self.env_vars.get("RAG_GCP_LOCATION")
-    if rag_location:
-      is_placeholder, reason = is_placeholder_value(
-          "RAG_GCP_LOCATION", rag_location
-      )
-      if is_placeholder:
-        typer.secho(
-            f"  [ERROR] RAG_GCP_LOCATION: {rag_location} ({reason})",
-            fg=typer.colors.RED,
-        )
-        all_valid = False
-      else:
-        typer.secho(
-            f"  [OK] RAG_GCP_LOCATION: {rag_location}", fg=typer.colors.GREEN
-        )
-    else:
-      typer.secho(
-          "  ℹ RAG_GCP_LOCATION: Not set (will use GCP_LOCATION)",
-          fg=typer.colors.YELLOW,
-      )
-
     return all_valid
 
   def _check_authentication(self) -> bool:
-    """Check if application default credentials are configured."""
+    """Check if Application Default Credentials are configured."""
     try:
       credentials, project = default()
       self.credentials = credentials
@@ -228,35 +216,36 @@ class VertexAIManager:
           "    gcloud auth application-default login", fg=typer.colors.YELLOW
       )
       typer.secho(
-          f"    gcloud auth application-default set-quota-project {self.project_id}",
+          "    gcloud auth application-default set-quota-project"
+          f" {self.project_id}",
           fg=typer.colors.YELLOW,
       )
       return False
 
   def _check_project_access(self) -> bool:
-    """Verify access to the configured GCP project using Python API."""
+    """Verify access to the configured Google Cloud project."""
     try:
       from google.cloud import resourcemanager_v3
 
-      # Create projects client
       projects_client = resourcemanager_v3.ProjectsClient(
           credentials=self.credentials
       )
 
-      # Try to get the project
       project_name = f"projects/{self.project_id}"
       request = resourcemanager_v3.GetProjectRequest(name=project_name)
       project = projects_client.get_project(request=request)
 
       typer.secho(
-          f"  [OK] Project accessible: {project.display_name or self.project_id}",
+          "  [OK] Project accessible:"
+          f" {project.display_name or self.project_id}",
           fg=typer.colors.GREEN,
       )
       return True
 
     except ImportError:
       typer.secho(
-          "  [WARN] google-cloud-resource-manager not installed (skipping project check)",
+          "  [WARNING] google-cloud-resource-manager not installed"
+          " (skipping project check)",
           fg=typer.colors.YELLOW,
       )
       return True
@@ -265,7 +254,7 @@ class VertexAIManager:
           f"  [ERROR] Cannot access project: {self.project_id}",
           fg=typer.colors.RED,
       )
-      typer.secho(f"    Error: {str(e)}", fg=typer.colors.RED)
+      typer.secho(f"    Error: {e}", fg=typer.colors.RED)
       typer.echo()
       typer.echo("  To fix, ensure:")
       typer.echo("    1. Credentials are valid and not expired:")
@@ -274,7 +263,8 @@ class VertexAIManager:
       )
       typer.echo("    2. Project ID is correct in .env")
       typer.echo(
-          f"    3. You have access to project '{self.project_id}' with current credentials"
+          f"    3. You have access to project '{self.project_id}' with current"
+          " credentials"
       )
       return False
 
@@ -292,19 +282,19 @@ class VertexAIManager:
     if not all_enabled:
       typer.echo()
       typer.echo("  To enable required APIs, run:")
+      apis = " ".join(self.REQUIRED_APIS)
       typer.secho(
-          f"    gcloud services enable {' '.join(self.REQUIRED_APIS)} --project={self.project_id}",
+          f"    gcloud services enable {apis} --project={self.project_id}",
           fg=typer.colors.YELLOW,
       )
 
     return all_enabled
 
   def _is_api_enabled(self, api: str) -> bool:
-    """Check if a specific API is enabled using Python API."""
+    """Check if a specific API is enabled using Service Usage API."""
     try:
       from googleapiclient import discovery
 
-      # Create service usage client using google-api-python-client
       service = discovery.build(
           "serviceusage",
           "v1",
@@ -312,38 +302,28 @@ class VertexAIManager:
           cache_discovery=False,
       )
 
-      # Build the service name
       service_name = f"projects/{self.project_id}/services/{api}"
-
-      # Get the service state
       result = service.services().get(name=service_name).execute()
-
-      # Check if service is enabled
       return result.get("state") == "ENABLED"
 
     except ImportError:
-      # Fallback to assuming enabled if library not available
       return True
     except Exception:
-      # If we can't check (API error, not found, etc), assume not enabled
       return False
 
   def _check_vertex_ai_init(self) -> bool:
     """Test Vertex AI initialization."""
     try:
-      # Use RAG location if set, otherwise use GCP_LOCATION
-      location = self.env_vars.get("RAG_GCP_LOCATION") or self.location
-
       vertexai.init(
           project=self.project_id,
-          location=location,
+          location=self.location,
           credentials=self.credentials,
       )
       typer.secho(
           "  [OK] Vertex AI initialized successfully", fg=typer.colors.GREEN
       )
       typer.secho(f"    Project: {self.project_id}", fg=typer.colors.GREEN)
-      typer.secho(f"    Location: {location}", fg=typer.colors.GREEN)
+      typer.secho(f"    Location: {self.location}", fg=typer.colors.GREEN)
       return True
     except Exception as e:
       typer.secho(
@@ -352,50 +332,41 @@ class VertexAIManager:
       return False
 
   def _check_permissions(self) -> bool:
-    """Check IAM permissions using Python library."""
+    """Check IAM permissions using Cloud Resource Manager."""
     try:
       from google.cloud import resourcemanager_v3
       from google.iam.v1 import iam_policy_pb2
 
-      typer.echo("  Checking IAM permissions...")
+      typer.echo("  [INFO] Checking IAM permissions...")
 
-      # Get current user identity from credentials
       if not self.credentials:
         typer.secho(
-            "  [WARN] No credentials available to check permissions",
+            "  [WARNING] No credentials available to check permissions",
             fg=typer.colors.YELLOW,
         )
         return True
 
-      # Try to get user email from credentials
       user_email = None
       if hasattr(self.credentials, "service_account_email"):
         user_email = self.credentials.service_account_email
-      elif hasattr(self.credentials, "id_token"):
-        # For user credentials, try to extract email from token
+      elif hasattr(self.credentials, "id_token") and self.credentials.id_token:
         try:
-          import base64
-          import json
-
-          # ID tokens are JWT format: header.payload.signature
           token_parts = self.credentials.id_token.split(".")
           if len(token_parts) >= 2:
-            # Decode payload (add padding if needed)
             payload = token_parts[1]
             payload += "=" * (4 - len(payload) % 4)
             decoded = json.loads(base64.b64decode(payload))
             user_email = decoded.get("email")
-        except Exception as e:
-          # Silently ignore token parsing errors, fallback to gcloud
-          _ = e  # Suppress unused variable warning
-          pass
+        except Exception:
+          user_email = None
 
       if user_email:
-        typer.echo(f"  Current user: {user_email}")
+        typer.echo(f"  [INFO] Current user: {user_email}")
       else:
-        typer.echo("  Current user: (authenticated, unable to determine email)")
+        typer.echo(
+            "  [INFO] Current user: (authenticated, unable to determine email)"
+        )
 
-      # Get IAM policy for the project
       projects_client = resourcemanager_v3.ProjectsClient(
           credentials=self.credentials
       )
@@ -404,22 +375,22 @@ class VertexAIManager:
       )
       policy = projects_client.get_iam_policy(request=request)
 
-      # Build member identifier
+      member_prefix: str | None = None
       member_identifiers = []
       if user_email:
-        member_identifiers.append(f"user:{user_email}")
-        # Also check for serviceAccount format
-        if "@" in user_email and ".iam.gserviceaccount.com" in user_email:
-          member_identifiers.append(f"serviceAccount:{user_email}")
+        member_prefix = (
+            "serviceAccount"
+            if user_email.endswith(".gserviceaccount.com")
+            else "user"
+        )
+        member_identifiers.append(f"{member_prefix}:{user_email}")
 
-      # Check if user has required roles
       user_roles = set()
       for binding in policy.bindings:
         for member in binding.members:
           if any(member == mid for mid in member_identifiers):
             user_roles.add(binding.role)
 
-      # Check required roles
       all_roles_present = True
       typer.echo()
       typer.echo("  Required roles:")
@@ -433,12 +404,13 @@ class VertexAIManager:
       if not all_roles_present:
         typer.echo()
         typer.echo("  To grant required roles, run:")
-        if user_email:
+        if user_email and member_prefix:
           for role in self.REQUIRED_ROLES:
             if role not in user_roles:
               typer.secho(
-                  f"    gcloud projects add-iam-policy-binding {self.project_id} \\\n"
-                  f"      --member='user:{user_email}' \\\n"
+                  "    gcloud projects add-iam-policy-binding"
+                  f" {self.project_id} \\\n"
+                  f"      --member='{member_prefix}:{user_email}' \\\n"
                   f"      --role='{role}'",
                   fg=typer.colors.YELLOW,
               )
@@ -447,36 +419,46 @@ class VertexAIManager:
 
     except ImportError:
       typer.secho(
-          "  [WARN] google-cloud-resource-manager not installed (skipping permission check)",
+          "  [WARNING] google-cloud-resource-manager not installed"
+          " (skipping permission check)",
           fg=typer.colors.YELLOW,
       )
       return True
     except Exception as e:
       typer.secho(
-          f"  [WARN] Could not check permissions: {e}", fg=typer.colors.YELLOW
+          f"  [WARNING] Could not check permissions: {e}",
+          fg=typer.colors.YELLOW,
       )
       typer.echo(
-          "    Note: Use GCP Console IAM page to verify permissions manually"
+          "    Note: Use Google Cloud Console IAM page to verify permissions"
+          " manually"
       )
       return True
 
   def enable_apis(self) -> bool:
     """Display command to enable required APIs."""
-    typer.echo(f"To enable required APIs for project: {self.project_id}")
+    project = (
+        self.project_id or self.env_vars.get("GCP_PROJECT_ID") or "<PROJECT_ID>"
+    )
+    typer.echo(f"[INFO] To enable required APIs for project: {project}")
     typer.echo()
 
     apis_to_enable = self.REQUIRED_APIS.copy()
-    cmd = f"gcloud services enable {' '.join(apis_to_enable)} --project={self.project_id}"
+    cmd = (
+        f"gcloud services enable {' '.join(apis_to_enable)} --project={project}"
+    )
 
     typer.echo("Run this command:")
     typer.secho(f"  {cmd}", fg=typer.colors.YELLOW)
     typer.echo()
-    typer.echo("Or enable APIs via the Cloud Console:")
+    typer.echo("Or enable APIs via the Google Cloud Console:")
     typer.echo(
-        f"  https://console.cloud.google.com/apis/library?project={self.project_id}"
+        f"  https://console.cloud.google.com/apis/library?project={project}"
     )
     typer.echo()
-    typer.echo("Note: It may take a few minutes for APIs to be fully active")
+    typer.echo(
+        "[INFO] It may take a few minutes for APIs to become fully active."
+    )
 
     return True
 
@@ -508,10 +490,8 @@ def enable_apis(
         Path, typer.Option(help="Path to the environment file.")
     ] = Path(".env"),
 ) -> None:
-  """Enable all required APIs for Vertex AI."""
+  """Display gcloud command to enable all required APIs for Vertex AI."""
   manager = VertexAIManager(env_file)
-
-  # Load environment first
   manager._check_env_vars()
 
   if not manager.enable_apis():
@@ -526,26 +506,33 @@ def check_quota(
 ) -> None:
   """Display quota information for Vertex AI services."""
   manager = VertexAIManager(env_file)
-  manager._load_env_vars()
+  env_vars = manager._load_env_vars()
+  project_id = env_vars.get("GCP_PROJECT_ID") or "<PROJECT_ID>"
 
   typer.echo()
   typer.secho("Vertex AI Quota Information", fg=typer.colors.CYAN, bold=True)
   typer.secho("=" * 80, fg=typer.colors.CYAN)
   typer.echo()
 
-  typer.echo("RAG Service Quotas:")
-  typer.echo("  - List/Get operations: 60 requests/minute/region")
-  typer.echo("  - Create/Delete operations: Limited (check GCP Console)")
-  typer.echo()
-
-  typer.echo("To view current quota usage:")
+  typer.echo(
+      "[INFO] Review Vertex AI Agent Engine and Gemini model quotas for your"
+      " region:"
+  )
   typer.secho(
-      f"  gcloud services quota list --service=aiplatform.googleapis.com --project={manager.project_id}",
+      f"  https://console.cloud.google.com/iam-admin/quotas?project={project_id}",
       fg=typer.colors.YELLOW,
   )
   typer.echo()
 
-  typer.echo("To request quota increase:")
+  typer.echo("To view current quota usage via gcloud:")
+  typer.secho(
+      "  gcloud services quota list --service=aiplatform.googleapis.com"
+      f" --project={project_id}",
+      fg=typer.colors.YELLOW,
+  )
+  typer.echo()
+
+  typer.echo("To request a quota increase:")
   typer.secho(
       "  https://cloud.google.com/docs/quotas/help/request_increase",
       fg=typer.colors.YELLOW,

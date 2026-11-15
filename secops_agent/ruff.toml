@@ -1,0 +1,4 @@
+extend = "../pyproject.toml"
+
+[lint.per-file-ignores]
+"secops_agent_app/agent.py" = ["D102", "I001", "S110"]
