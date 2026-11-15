@@ -23,13 +23,17 @@ def run_pipeline(name: str = "world") -> str:
 
 
 def get_secops_mcp_endpoint(region: str | None = None) -> str:
-  """Build the regional Google Cloud Remote MCP Server URL for SecOps.
+  """Build the locational Google Security Operations Remote MCP Server URL.
 
   Args:
-    region: Chronicle region identifier (defaults to CHRONICLE_REGION or 'us').
+    region: Google Security Operations region identifier, defaulting to
+      CHRONICLE_REGION or 'us'. Ignored when SECOPS_MCP_URL is set.
 
   Returns:
     Full HTTPS MCP endpoint URL.
   """
-  resolved_region = region or os.environ.get("CHRONICLE_REGION", "us")
-  return f"https://chronicle.{resolved_region}.rep.googleapis.com/mcp"
+  override_url = os.environ.get("SECOPS_MCP_URL", "").strip()
+  if override_url:
+    return override_url
+  resolved_region = (region or os.environ.get("CHRONICLE_REGION", "us")).strip()
+  return f"https://{resolved_region}-chronicle.googleapis.com/mcp"

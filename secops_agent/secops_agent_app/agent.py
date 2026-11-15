@@ -1,40 +1,33 @@
-import asyncio
 import logging
 import os
-import weakref
 from typing import Any
 
 import google.auth
 import google.auth.transport.requests
 from dotenv import load_dotenv
 from google.adk.agents import Agent
+from google.adk.agents.callback_context import CallbackContext
 from google.adk.agents.context import Context
 from google.adk.agents.context_cache_config import ContextCacheConfig
 from google.adk.apps import App
 from google.adk.apps.app import ResumabilityConfig
 from google.adk.apps.compaction import EventsCompactionConfig
 from google.adk.models import Gemini
+from google.adk.models.llm_request import LlmRequest
+from google.adk.models.llm_response import LlmResponse
 from google.adk.planners import BuiltInPlanner
 from google.adk.tools.base_tool import BaseTool
-from google.adk.tools.mcp_tool import McpToolset
-from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
+from google.adk.tools.mcp_tool import mcp_session_manager
+from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
-from mcp.client.session import ClientSession
-from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumentor
+from opentelemetry.instrumentation import google_genai as otel_genai
 
-
-async def _bypass_mcp_output_schema_validation(
-    self: ClientSession, name: str, result: Any
-) -> None:
-  """Bypass mcp.ClientSession outputSchema validation for Chronicle OneMCP streaming/text responses."""
-  del self, name, result
-
-
-ClientSession.validate_tool_result = _bypass_mcp_output_schema_validation
-
-# Default TTL (seconds) for caching the remote Chronicle OneMCP tools/list response
+# Default TTL (seconds) for caching the remote Google SecOps MCP tools/list response.
 DEFAULT_MCP_TOOL_CACHE_TTL_SECONDS = 300.0
+
+# Default Gemini model for the SecOps agent.
+DEFAULT_SECOPS_MODEL = "gemini-3.8-flash"
 
 # SecOps MCP tools that are permanently disabled and hidden from the LLM to
 # eliminate 169.8 KB (-68.94%) of inputSchema bloat and 710.5 KB of outputSchema
@@ -51,7 +44,7 @@ DISABLED_SECOPS_TOOLS = frozenset(
     }
 )
 
-# Destructive SecOps MCP tools that can optionally require human-in-the-loop confirmation
+# Destructive SecOps MCP tools that can optionally require human-in-the-loop confirmation.
 DESTRUCTIVE_SECOPS_TOOLS = frozenset(
     {
         "delete_feed",
@@ -64,15 +57,15 @@ DESTRUCTIVE_SECOPS_TOOLS = frozenset(
 )
 
 STATIC_SECOPS_INSTRUCTION = """You are a Google Security Operations (SecOps) assistant powered by Google ADK 2.x.
-You have access to the remote Chronicle OneMCP server, which provides tools for SIEM event search, entity investigation, detection rule management, and SOAR case operations.
-Always use the provided tools to fetch authoritative telemetry and case data from Chronicle rather than guessing.
-When a tool requires projectId, customerId, or region, always supply the active tenant identifiers from your instructions.
-Feed administration and parser simulation tools (create_feed, update_feed, run_parser, list_feeds, get_feed, disable_feed, enable_feed) are intentionally disabled by policy to optimize context window usage.
+You have access to the remote Google Security Operations MCP server, which provides tools for SIEM event search, entity investigation, detection rule management, and SOAR case operations.
+Always call the provided tools to fetch authoritative telemetry and case data from Google Security Operations rather than guessing.
+When a tool requires projectId, customerId, or region, supply the active tenant identifiers from your instructions.
+Feed administration and parser simulation tools (create_feed, update_feed, run_parser, list_feeds, get_feed, disable_feed, enable_feed) are disabled by policy to keep tool schemas compact.
 """
 
 
 def get_disabled_secops_tools() -> frozenset[str]:
-  """Return the set of disabled SecOps MCP tools (always including DISABLED_SECOPS_TOOLS plus any SECOPS_DISABLED_TOOLS env entries)."""
+  """Return disabled SecOps MCP tools from policy and SECOPS_DISABLED_TOOLS."""
   extra_raw = os.environ.get("SECOPS_DISABLED_TOOLS", "")
   extra = {t.strip() for t in extra_raw.split(",") if t.strip()}
   return DISABLED_SECOPS_TOOLS | extra
@@ -81,7 +74,7 @@ def get_disabled_secops_tools() -> frozenset[str]:
 def is_secops_tool_enabled(
     tool: BaseTool, readonly_context: Any = None
 ) -> bool:
-  """Filter predicate passed to McpToolset(tool_filter=...) to exclude disabled SecOps tools."""
+  """Filter predicate passed to McpToolset(tool_filter=...) to exclude disabled tools."""
   del readonly_context
   tool_name = getattr(tool, "name", "")
   return tool_name not in get_disabled_secops_tools()
@@ -103,7 +96,7 @@ def confirm_destructive_secops_tool(
     args: dict[str, Any],
     tool_context: ToolContext,
 ) -> dict[str, Any] | None:
-  """ADK 2.x before_tool_callback blocking disabled tools and enforcing HITL confirmation on destructive tools."""
+  """Block disabled tools and enforce confirmation on destructive SecOps tools."""
   tool_name = getattr(tool, "name", "")
   if tool_name in get_disabled_secops_tools():
     return {
@@ -150,7 +143,7 @@ def handle_secops_tool_error(
     tool_context: Context,
     error: Exception,
 ) -> dict[str, Any]:
-  """ADK 2.x on_tool_error_callback for structured MCP tool error recovery."""
+  """Convert SecOps MCP tool exceptions into structured error responses."""
   del tool_context
   tool_name = getattr(tool, "name", str(tool))
   logging.warning(
@@ -168,40 +161,135 @@ def handle_secops_tool_error(
   }
 
 
-class EventLoopSafeGemini(Gemini):
-  """Gemini LLM wrapper that recreates api_client when the asyncio event loop changes.
+def strip_mcp_output_schemas(
+    callback_context: CallbackContext,
+    llm_request: LlmRequest,
+) -> LlmResponse | None:
+  """Clear MCP output schemas on generate_content tool declarations."""
+  del callback_context
+  config = getattr(llm_request, "config", None)
+  tools = getattr(config, "tools", None) if config is not None else None
+  if not tools:
+    return None
+  for tool in tools:
+    func_decls = getattr(tool, "function_declarations", None)
+    if not func_decls:
+      continue
+    for fd in func_decls:
+      if hasattr(fd, "response_json_schema"):
+        fd.response_json_schema = None
+      if hasattr(fd, "response"):
+        fd.response = None
+  return None
 
-  In Vertex AI Reasoning Engine (AdkApp), each request can execute on a fresh
-  asyncio event loop while the root Agent and its Gemini model instance are
-  reused across turns. Recreating the cached google.genai.Client when the
-  previous loop has closed prevents httpcore.AsyncConnectionPool from raising
-  RuntimeError('Event loop is closed').
+
+def _clear_mcp_tool_output_schema(raw_tool: Any) -> None:
+  """Clear output_schema and outputSchema attributes on an MCP tool object."""
+  if raw_tool is None:
+    return
+  for attr in ("output_schema", "outputSchema"):
+    if hasattr(raw_tool, attr):
+      setattr(raw_tool, attr, None)
+
+
+def _clear_session_output_schemas(
+    session: Any,
+    tool_names: set[str] | frozenset[str],
+) -> None:
+  """Nullify cached tool output schemas on a single MCP ClientSession."""
+  schemas = getattr(session, "_tool_output_schemas", None)
+  if not isinstance(schemas, dict):
+    return
+  for key in list(schemas):
+    schemas[key] = None
+  for tool_name in tool_names:
+    schemas[tool_name] = None
+
+
+class _SecOpsMcpSessionManager(mcp_session_manager.MCPSessionManager):
+  """MCPSessionManager that clears output schemas on newly created sessions."""
+
+  def __init__(self, *args: Any, **kwargs: Any) -> None:
+    super().__init__(*args, **kwargs)
+    self._known_tool_names: set[str] = set()
+
+  async def create_session(self, headers: dict[str, str] | None = None) -> Any:
+    """Create or reuse a per-loop MCP session with output schemas disabled."""
+    session = await super().create_session(headers=headers)
+    _clear_session_output_schemas(session, self._known_tool_names)
+    return session
+
+
+class SecOpsMcpToolset(McpToolset):
+  """Scoped McpToolset that disables MCP output-schema validation per toolset.
+
+  Streaming Google Security Operations MCP tools such as list_security_alerts
+  return text progress chunks in result.content without structuredContent.
+  Clearing outputSchema / output_schema on listed tools and nullifying
+  _tool_output_schemas on pooled sessions prevents MCP 2.x validate_tool_result
+  RuntimeErrors without mutating global ClientSession state.
   """
 
-  _last_loop_ref: Any = None
+  def __init__(self, *args: Any, **kwargs: Any) -> None:
+    super().__init__(*args, **kwargs)
+    old_mgr = self._mcp_session_manager
+    self._mcp_session_manager = _SecOpsMcpSessionManager(
+        connection_params=self._connection_params,
+        errlog=self._errlog,
+        sampling_callback=self._sampling_callback,
+        sampling_capabilities=self._sampling_capabilities,
+        elicitation_callback=self._elicitation_callback,
+        message_handler=getattr(old_mgr, "_message_handler", None),
+    )
 
-  @property
-  def api_client(self) -> Any:
-    try:
-      loop = asyncio.get_running_loop()
-    except RuntimeError:
-      loop = None
-    if loop is not None:
-      prev_loop = (
-          self._last_loop_ref() if callable(self._last_loop_ref) else None
-      )
-      if prev_loop is not loop or prev_loop.is_closed():
-        self.__dict__.pop("api_client", None)
-        self.__dict__.pop("_live_api_client", None)
-        self._last_loop_ref = weakref.ref(loop)
-    return super().api_client
+  async def get_tools(
+      self,
+      readonly_context: Any = None,
+  ) -> list[BaseTool]:
+    """Return enabled SecOps MCP tools with output schemas cleared."""
+    tools = await super().get_tools(readonly_context=readonly_context)
+    tool_names: set[str] = set()
+    for tool in tools:
+      tool_name = getattr(tool, "name", None)
+      if isinstance(tool_name, str) and tool_name:
+        tool_names.add(tool_name)
+      _clear_mcp_tool_output_schema(getattr(tool, "_mcp_tool", None))
+
+    for cached in getattr(self, "_tool_list_cache", {}).values():
+      for raw_tool in getattr(cached, "tools", ()) or ():
+        raw_name = getattr(raw_tool, "name", None)
+        if isinstance(raw_name, str) and raw_name:
+          tool_names.add(raw_name)
+        _clear_mcp_tool_output_schema(raw_tool)
+
+    session_mgr = getattr(self, "_mcp_session_manager", None)
+    known_names = getattr(session_mgr, "_known_tool_names", None)
+    if isinstance(known_names, set):
+      known_names.update(tool_names)
+
+    sessions = getattr(session_mgr, "_sessions", None)
+    if isinstance(sessions, dict):
+      for entry in sessions.values():
+        session = entry[0] if isinstance(entry, tuple) and entry else entry
+        _clear_session_output_schemas(session, tool_names)
+
+    return tools
 
 
 def get_secops_headers(context: Any) -> dict[str, str]:
-  """Build HTTP headers for Chronicle OneMCP requests with OAuth token passthrough."""
+  """Build HTTP headers for Google SecOps MCP requests with OAuth passthrough.
+
+  When GEMINI_AUTHORIZATION_ID or OAUTH_AUTH_ID is configured, a delegated user
+  OAuth access token must be present in context.state ('temp:<auth_id>' or
+  '<auth_id>'). Application Default Credentials (ADC) are never attached unless
+  SECOPS_ALLOW_ADC_FALLBACK=true is explicitly enabled for local CLI testing.
+  """
   chronicle_project_id = os.environ.get("CHRONICLE_PROJECT_ID")
   auth_id = os.environ.get("GEMINI_AUTHORIZATION_ID") or os.environ.get(
       "OAUTH_AUTH_ID"
+  )
+  allow_adc_fallback = (
+      os.environ.get("SECOPS_ALLOW_ADC_FALLBACK", "false").lower() == "true"
   )
 
   headers = {"Accept": "text/event-stream", "Content-Type": "application/json"}
@@ -210,8 +298,8 @@ def get_secops_headers(context: Any) -> dict[str, str]:
     headers["x-goog-user-project"] = chronicle_project_id
   else:
     logging.critical(
-        "CHRONICLE_PROJECT_ID is missing from environment! OneMCP tool calls"
-        " *will* fail without a routing context."
+        "CHRONICLE_PROJECT_ID is missing from environment; Google SecOps MCP"
+        " tool calls require an x-goog-user-project header."
     )
 
   user_token = None
@@ -222,16 +310,33 @@ def get_secops_headers(context: Any) -> dict[str, str]:
 
   if user_token:
     headers["Authorization"] = f"Bearer {user_token}"
-  else:
-    try:
-      creds, _ = google.auth.default(
-          scopes=["https://www.googleapis.com/auth/cloud-platform"]
-      )
-      creds.refresh(google.auth.transport.requests.Request())
-      if creds.token:
-        headers["Authorization"] = f"Bearer {creds.token}"
-    except Exception:
-      pass
+    return headers
+
+  if auth_id:
+    logging.warning(
+        "OAuth authorization ID '%s' is configured, but no delegated user"
+        " token was found in context.state ('temp:%s' or '%s').",
+        auth_id,
+        auth_id,
+        auth_id,
+    )
+
+  if not allow_adc_fallback:
+    return headers
+
+  try:
+    creds, _ = google.auth.default(
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+    creds.refresh(google.auth.transport.requests.Request())
+    if creds.token:
+      headers["Authorization"] = f"Bearer {creds.token}"
+  except Exception as exc:
+    logging.warning(
+        "SECOPS_ALLOW_ADC_FALLBACK is enabled, but ADC token refresh failed:"
+        " %s",
+        exc,
+    )
 
   return headers
 
@@ -239,51 +344,52 @@ def get_secops_headers(context: Any) -> dict[str, str]:
 def create_mcp_toolset(
     region: str,
     tool_list_cache_ttl_seconds: float = DEFAULT_MCP_TOOL_CACHE_TTL_SECONDS,
-) -> McpToolset:
-  """Create an ADK 2.x McpToolset with tool-list caching and event-loop-safe session pooling."""
-  secops_mcp_url = f"https://chronicle.{region}.rep.googleapis.com/mcp"
+) -> SecOpsMcpToolset:
+  """Create a scoped ADK 2.x SecOpsMcpToolset for the regional MCP endpoint."""
+  secops_mcp_url = (
+      os.environ.get("SECOPS_MCP_URL", "").strip()
+      or f"https://{region}-chronicle.googleapis.com/mcp"
+  )
   logging.info(
-      "Initializing ADK 2.x McpToolset with URL: %s (cache TTL: %ss)",
+      "Initializing ADK 2.x SecOpsMcpToolset with URL: %s (cache TTL: %ss)",
       secops_mcp_url,
       tool_list_cache_ttl_seconds,
   )
 
-  toolset_ref: list[McpToolset] = []
-  last_loop_ref: list[Any] = [None]
-
-  def _loop_safe_header_provider(context: Any) -> dict[str, str]:
-    try:
-      loop = asyncio.get_running_loop()
-    except RuntimeError:
-      loop = None
-    if loop is not None and toolset_ref:
-      prev_loop = last_loop_ref[0]() if callable(last_loop_ref[0]) else None
-      if prev_loop is not loop or prev_loop.is_closed():
-        session_mgr = getattr(toolset_ref[0], "_mcp_session_manager", None)
-        sessions = getattr(session_mgr, "_sessions", None)
-        if isinstance(sessions, dict) and sessions:
-          logging.info(
-              "Clearing %d pooled MCP session(s) from closed event loop",
-              len(sessions),
-          )
-          sessions.clear()
-        last_loop_ref[0] = weakref.ref(loop)
-    return get_secops_headers(context)
-
-  toolset = McpToolset(
-      connection_params=StreamableHTTPConnectionParams(url=secops_mcp_url),
-      header_provider=_loop_safe_header_provider,
+  return SecOpsMcpToolset(
+      connection_params=mcp_session_manager.StreamableHTTPConnectionParams(
+          url=secops_mcp_url
+      ),
+      header_provider=get_secops_headers,
       tool_filter=is_secops_tool_enabled,
       tool_list_cache_ttl_seconds=tool_list_cache_ttl_seconds,
       use_mcp_resources=False,
-      errlog=None,  # explicitly None to prevent sys.stderr capturing (which cannot be pickled)
+      errlog=None,  # Prevent sys.stderr capture so the toolset remains picklable.
   )
-  toolset_ref.append(toolset)
-  return toolset
+
+
+def _build_thinking_config(model_name: str) -> types.ThinkingConfig:
+  """Build a model-appropriate ThinkingConfig for Gemini 3 or Gemini 4."""
+  include_thoughts = (
+      os.environ.get("SECOPS_INCLUDE_THOUGHTS", "false").lower() == "true"
+  )
+  if model_name.startswith("gemini-4"):
+    thinking_level = (
+        os.environ.get("SECOPS_THINKING_LEVEL", "MEDIUM").strip().upper()
+    )
+    return types.ThinkingConfig(
+        include_thoughts=include_thoughts,
+        thinking_level=thinking_level,
+    )
+  thinking_budget = int(os.environ.get("SECOPS_THINKING_BUDGET", "1024"))
+  return types.ThinkingConfig(
+      include_thoughts=include_thoughts,
+      thinking_budget=thinking_budget,
+  )
 
 
 def create_agent() -> Agent:
-  """Create the ADK 2.x SecOps LlmAgent using Gemini Interactions API (Case A)."""
+  """Create the ADK 2.x Google Security Operations LlmAgent."""
   load_dotenv()
   use_interactions_api = (
       os.environ.get("SECOPS_USE_INTERACTIONS_API", "true").lower() == "true"
@@ -292,7 +398,7 @@ def create_agent() -> Agent:
     # Gemini Interactions API (convert_tools_config_to_interactions_format)
     # requires standard lowercase JSON Schema in func_decl.parameters_json_schema
     # (produced when FeatureName.JSON_SCHEMA_FOR_FUNC_DECL is enabled) and
-    # automatically drops func_decl.response_json_schema (outputSchema).
+    # drops func_decl.response_json_schema (outputSchema) automatically.
     os.environ.pop("ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL", None)
 
   project_id = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get(
@@ -302,14 +408,14 @@ def create_agent() -> Agent:
     try:
       _, project_id = google.auth.default()
     except Exception:
-      pass
+      project_id = None
 
   os.environ["GOOGLE_CLOUD_PROJECT"] = project_id or ""
   os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
   os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
 
   if os.environ.get("REASONING_ENGINE_DEPLOYMENT") != "True":
-    GoogleGenAiSdkInstrumentor().instrument()
+    otel_genai.GoogleGenAiSdkInstrumentor().instrument()
 
   if "GOOGLE_CLOUD_AGENT_ENGINE_ID" in os.environ:
     os.environ.setdefault("GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY", "true")
@@ -328,10 +434,9 @@ def create_agent() -> Agent:
       region, tool_list_cache_ttl_seconds=cache_ttl
   )
 
-  default_model = (
-      "gemini-3-flash-preview" if use_interactions_api else "gemini-2.5-pro"
+  model_name = (
+      os.environ.get("SECOPS_MODEL", "").strip() or DEFAULT_SECOPS_MODEL
   )
-  model_name = os.environ.get("SECOPS_MODEL", default_model)
   tenant_instruction = f"""Current Tenant Information:
 - Project ID: {chronicle_project_id}
 - Customer ID: {customer_id}
@@ -346,13 +451,15 @@ def create_agent() -> Agent:
   if use_interactions_api:
     static_instruction = None
     full_instruction = f"{STATIC_SECOPS_INSTRUCTION}\n{tenant_instruction}"
+    before_model_callback = None
   else:
     static_instruction = STATIC_SECOPS_INSTRUCTION
     full_instruction = tenant_instruction
+    before_model_callback = strip_mcp_output_schemas
 
   return Agent(
       name="secops_agent",
-      model=EventLoopSafeGemini(
+      model=Gemini(
           model=model_name,
           use_interactions_api=use_interactions_api,
           client_kwargs={"location": "global"},
@@ -361,22 +468,17 @@ def create_agent() -> Agent:
       static_instruction=static_instruction,
       instruction=full_instruction,
       planner=BuiltInPlanner(
-          thinking_config=types.ThinkingConfig(
-              include_thoughts=(
-                  os.environ.get("SECOPS_INCLUDE_THOUGHTS", "false").lower()
-                  == "true"
-              ),
-              thinking_budget=1024,
-          )
+          thinking_config=_build_thinking_config(model_name),
       ),
       tools=[secops_toolset],
+      before_model_callback=before_model_callback,
       before_tool_callback=confirm_destructive_secops_tool,
       on_tool_error_callback=handle_secops_tool_error,
   )
 
 
 def create_app() -> App:
-  """Create the ADK 2.x App container with ContextCacheConfig, EventsCompactionConfig, and ResumabilityConfig."""
+  """Create the ADK 2.x App with context caching, compaction, and resumability."""
   root_agent = create_agent()
   use_interactions_api = getattr(
       root_agent.model, "use_interactions_api", False

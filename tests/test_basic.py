@@ -34,14 +34,18 @@ def test_run_pipeline() -> None:
 
 
 def test_get_secops_mcp_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+  monkeypatch.delenv("SECOPS_MCP_URL", raising=False)
   monkeypatch.setenv("CHRONICLE_REGION", "europe")
   assert (
-      get_secops_mcp_endpoint()
-      == "https://chronicle.europe.rep.googleapis.com/mcp"
+      get_secops_mcp_endpoint() == "https://europe-chronicle.googleapis.com/mcp"
   )
   assert (
-      get_secops_mcp_endpoint("us")
-      == "https://chronicle.us.rep.googleapis.com/mcp"
+      get_secops_mcp_endpoint("us") == "https://us-chronicle.googleapis.com/mcp"
+  )
+  monkeypatch.setenv("SECOPS_MCP_URL", "https://custom-secops.example.com/mcp")
+  assert get_secops_mcp_endpoint() == "https://custom-secops.example.com/mcp"
+  assert (
+      get_secops_mcp_endpoint("us") == "https://custom-secops.example.com/mcp"
   )
 
 
@@ -62,7 +66,7 @@ def test_get_secops_headers_with_oauth_token(
 ) -> None:
   monkeypatch.setenv("CHRONICLE_PROJECT_ID", "test-chronicle-project")
   monkeypatch.setenv(
-      "CHRONICLE_CUSTOMER_ID", "00000000-0000-0000-0000-000000000000"
+      "CHRONICLE_CUSTOMER_ID", "a1b2c3d4-e5f6-4321-abcd-ef1234567890"
   )
   monkeypatch.setenv("GEMINI_AUTHORIZATION_ID", "test-auth-id")
   context = SimpleNamespace(
@@ -87,8 +91,10 @@ def test_adk_v2_create_app_and_agent_features(
   monkeypatch.setenv("REASONING_ENGINE_DEPLOYMENT", "True")
   monkeypatch.setenv("CHRONICLE_PROJECT_ID", "test-chronicle-project")
   monkeypatch.setenv(
-      "CHRONICLE_CUSTOMER_ID", "00000000-0000-0000-0000-000000000000"
+      "CHRONICLE_CUSTOMER_ID", "a1b2c3d4-e5f6-4321-abcd-ef1234567890"
   )
+  monkeypatch.delenv("SECOPS_MODEL", raising=False)
+  monkeypatch.delenv("SECOPS_USE_INTERACTIONS_API", raising=False)
   adk_app = create_app()
   assert adk_app.name == "secops_agent_app"
   assert adk_app.context_cache_config is None
@@ -98,12 +104,13 @@ def test_adk_v2_create_app_and_agent_features(
   assert adk_app.resumability_config.is_resumable is True
 
   agent = create_agent()
-  assert agent.model.model == "gemini-3-flash-preview"
+  assert agent.model.model == "gemini-3.8-flash"
   assert agent.model.use_interactions_api is True
   assert agent.static_instruction is None
   assert "Google ADK 2.x" in str(agent.instruction)
   assert "test-chronicle-project" in str(agent.instruction)
   assert agent.planner is not None
+  assert agent.before_model_callback is None
   assert agent.before_tool_callback is confirm_destructive_secops_tool
   assert agent.on_tool_error_callback is handle_secops_tool_error
   mcp_toolset = agent.tools[0]
